@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alveare — il tavolo da D&amp;D a esagoni</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<main class="landing">
+  <section class="hero">
+    <h1>Alveare</h1>
+    <p>Un tavolo da D&amp;D per giocare insieme da qualsiasi posto: stanze a nido d'ape, dadi, mostri, tesori, trappole ed enigmi.</p>
+    <svg id="hero-map" viewBox="0 0 400 300" role="img" aria-label="Esempio di mappa: un eroe, un goblin e un forziere sulla griglia a esagoni"></svg>
+  </section>
+
+  <section class="forms">
+    <div id="cfg-warn" class="warn" hidden>Collega prima il database: apri <code>js/config.js</code> e inserisci URL e anon key di Supabase (vedi README).</div>
+
+    <div class="panelbox" id="resume" hidden>
+      <h2>Riprendi la campagna</h2>
+      <p class="muted" id="resume-name"></p>
+      <div class="btnrow"><a class="btn primary" id="resume-master" href="master.html">Torna al pannello Master</a></div>
+    </div>
+
+    <form class="panelbox" id="f-new">
+      <h2>Sei il Master? Crea una campagna</h2>
+      <div class="inline">
+        <div class="fld"><label for="n-name">Nome della campagna</label><input id="n-name" type="text" required maxlength="80" placeholder="La Cripta del Re Dimenticato"></div>
+        <button class="btn primary">Crea</button>
+      </div>
+      <div class="secret" id="created" hidden>
+        <p><strong>Salva questi dati:</strong> la chiave serve a rientrare come Master da un altro dispositivo e non si può recuperare.</p>
+        <p>Codice giocatori: <code id="c-code"></code></p>
+        <p>Chiave del Master: <code id="c-key"></code></p>
+        <a class="btn primary" href="master.html">Apri il pannello Master</a>
+      </div>
+    </form>
+
+    <form class="panelbox" id="f-master">
+      <h2>Rientra come Master</h2>
+      <div class="inline">
+        <div class="fld"><label for="m-code">Codice</label><input id="m-code" type="text" required maxlength="8" autocapitalize="characters"></div>
+        <div class="fld"><label for="m-key">Chiave del Master</label><input id="m-key" type="password" required></div>
+        <button class="btn">Entra</button>
+      </div>
+    </form>
+
+    <form class="panelbox" id="f-player">
+      <h2>Sei un giocatore? Unisciti</h2>
+      <div class="inline">
+        <div class="fld"><label for="p-code">Codice che ti ha dato il Master</label><input id="p-code" type="text" required maxlength="8" autocapitalize="characters" placeholder="A1B2C3"></div>
+        <button class="btn primary">Entra al tavolo</button>
+      </div>
+    </form>
+  </section>
+</main>
+<script type="module" src="js/index.js"></script>
+</body>
+</html>

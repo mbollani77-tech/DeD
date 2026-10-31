@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alveare — Pannello del Master</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top" id="top"></header>
+  <section class="stage">
+    <div class="toolbar" id="toolbar"></div>
+    <div class="initstrip" id="init" hidden></div>
+    <div class="board-wrap">
+      <svg id="board" aria-label="Mappa della stanza"></svg>
+      <div class="empty" id="empty" hidden></div>
+      <div class="zoom">
+        <button class="btn" data-act="zoom-in" aria-label="Ingrandisci">+</button>
+        <button class="btn" data-act="zoom-out" aria-label="Riduci">−</button>
+        <button class="btn" data-act="fit" aria-label="Inquadra tutta la stanza">⤢</button>
+      </div>
+    </div>
+    <div class="actionbar" id="actionbar" hidden></div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </section>
+  <aside class="side">
+    <nav class="tabs" id="tabs"></nav>
+    <div class="panel" id="panel"></div>
+    <div class="near" id="near"></div>
+    <div class="inspector" id="inspector"></div>
+    <div id="dice-tray"></div>
+    <div class="logbox"><ul id="log"></ul></div>
+  </aside>
+</div>
+<div id="chooser" class="chooser" hidden></div>
+<script type="module" src="js/master.js"></script>
+</body>
+</html>
