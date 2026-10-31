@@ -1,9 +1,10 @@
 import { openCampaign, insert, update, remove, say } from './db.js';
 import { $, esc, toast, ask, confirmBox } from './ui.js';
-import { createBoard } from './board.js';
+import { createView } from './view.js';
+import { openDungeonMap } from './dungeonmap.js';
 import { mountDiceTray, roll, rollDie } from './dice.js';
 import { STATS, STAT_NAME, RACES, CLASSES, WEAPONS, SPELLS, mod, prof, fmtMod, hexesFor } from './rules.js';
-import { weaponAttack, castSpell, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters } from './combat.js';
+import { weaponAttack, castSpell, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters, markVisited } from './combat.js';
 import { key, dist, neighbors, inBounds, reachable, hexesWithin, los } from './hex.js';
 
 const fatal = msg => { document.body.innerHTML = `<div class="fatal"><h2>Non riesco ad aprire la campagna</h2><p>${esc(msg)}</p><a class="btn primary" href="index.html">Torna all'inizio</a></div>`; };
@@ -17,10 +18,11 @@ const S = { meId: localStorage.getItem('dnd.char.' + cid), mode: { t: 'move' }, 
 const me = () => store.characters.find(c => c.id === S.meId) || null;
 const roomOf = ch => store.rooms.find(r => r.id === ch?.room_id) || null;
 const err = e => toast(e?.message || String(e), 'err');
+const asked = new Set();
 const PRIO = { barbaro: ['for', 'cos', 'des', 'sag', 'car', 'int'], bardo: ['car', 'des', 'cos', 'sag', 'int', 'for'], chierico: ['sag', 'cos', 'for', 'car', 'des', 'int'], druido: ['sag', 'cos', 'des', 'int', 'car', 'for'], guerriero: ['for', 'cos', 'des', 'sag', 'int', 'car'], ladro: ['des', 'int', 'car', 'cos', 'sag', 'for'], mago: ['int', 'cos', 'des', 'sag', 'car', 'for'], monaco: ['des', 'sag', 'cos', 'for', 'int', 'car'], paladino: ['for', 'car', 'cos', 'sag', 'des', 'int'], ranger: ['des', 'sag', 'cos', 'int', 'for', 'car'], stregone: ['car', 'cos', 'des', 'sag', 'int', 'for'], warlock: ['car', 'cos', 'des', 'sag', 'int', 'for'] };
 
 /* ---------- mappa ---------- */
-const board = createBoard($('#board'), {
+const board = createView({ svg: $('#board'), host3d: $('#board3d'), handlers: {
   async onClick({ col, row }) {
     const ch = me(); const r = roomOf(ch); if (!ch || !r || S.busy) return;
     if (ch.hp <= 0) return toast('Sei a terra: aspetta aiuto o il Master.');
@@ -41,7 +43,7 @@ const board = createBoard($('#board'), {
       } else await castSpell(store, ch, a.item, { col, row }, r, S.adv || null);
     });
   },
-});
+} });
 async function busy(fn) { S.busy = true; try { await fn(); } catch (e) { err(e); } finally { S.busy = false; render(); } }
 
 function currentAction(ch) {
@@ -84,6 +86,7 @@ function render() {
   $('#chooser').hidden = !!ch;
   if (!ch) return renderChooser();
   const r = roomOf(ch);
+  if (r && !(store.campaign.state?.visited || []).includes(r.id) && !asked.has(r.id)) { asked.add(r.id); markVisited(store, r.id); }
   computeHL(ch, r);
   renderTop(ch); renderToolbar(r); renderInit(ch); renderBoard(ch, r); renderActionbar(ch); renderStatus(ch, r);
   if (!(document.activeElement?.tagName === 'SELECT' && $('#panel').contains(document.activeElement))) renderPanel(ch);
@@ -106,7 +109,8 @@ function renderInit(ch) {
   el.innerHTML = `<b>Round ${st.round || 1}</b>` + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''}">${esc(i.name)} ${i.roll}${i.id === ch.id ? ' (tu)' : ''}</span>`).join('');
 }
 function renderBoard(ch, r) {
-  const empty = $('#empty'); empty.hidden = !!r; $('#board').style.display = r ? '' : 'none';
+  const empty = $('#empty'); empty.hidden = !!r; board.show(!!r);
+  const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
   if (!r) { empty.innerHTML = '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
   board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, visible: visibleSet(r) });
 }
@@ -269,6 +273,8 @@ const acts = {
   tab: d => { S.tab = d.t; render(); },
   mode: d => { S.mode = d.t === 'move' ? { t: 'move' } : { t: d.t, i: +d.i }; render(); },
   'zoom-in': () => board.zoom(0.8), 'zoom-out': () => board.zoom(1.25), fit: () => board.fit(),
+  view: async () => { await board.set(board.mode === '2d' ? '3d' : '2d'); render(); },
+  dmap: () => openDungeonMap({ store, role: 'player', currentRoomId: me()?.room_id }),
   loot: d => busy(() => lootEntity(store, me(), ent(d.id))),
   disarm: d => busy(() => disarmTrap(store, me(), ent(d.id))),
   pass: d => busy(() => passDoor(store, me(), ent(d.id))),
@@ -300,5 +306,6 @@ document.addEventListener('click', async e => {
 document.addEventListener('change', e => { if (e.target.dataset?.pick === 'adv') S.adv = e.target.value; });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { S.mode = { t: 'move' }; render(); } });
 
+if (localStorage.getItem('dnd.view') === '3d') board.set('3d').then(render);
 mountDiceTray($('#dice-tray'), { who: () => me()?.name || 'Giocatore', say: (kind, text) => say(store, me()?.name || 'Giocatore', kind === 'secret' ? 'roll' : kind, text) });
 render();

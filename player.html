@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"}}</script>
 </head>
 <body>
 <div class="app">
@@ -17,8 +18,11 @@
     <div class="initstrip" id="init" hidden></div>
     <div class="board-wrap">
       <svg id="board" aria-label="Mappa della stanza"></svg>
+      <div id="board3d" class="board3d" hidden aria-label="Vista 3D della stanza"></div>
       <div class="empty" id="empty" hidden></div>
       <div class="zoom">
+        <button class="btn wide" data-act="view" aria-label="Cambia vista 2D o 3D" title="Vista 2D / 3D">3D</button>
+        <button class="btn" data-act="dmap" aria-label="Mappa del dungeon" title="Mappa del dungeon">🗺</button>
         <button class="btn" data-act="zoom-in" aria-label="Ingrandisci">+</button>
         <button class="btn" data-act="zoom-out" aria-label="Riduci">−</button>
         <button class="btn" data-act="fit" aria-label="Inquadra tutta la stanza">⤢</button>

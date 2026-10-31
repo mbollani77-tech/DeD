@@ -10,8 +10,8 @@ import { center, dist, SQ3 } from './hex.js';
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const [x, y] = center(c, r, S); const d = dist(hero, { col: c, row: r });
     const wall = (c === 8 && r >= 2 && r <= 5) || (c === 0) || (r === 0);
-    const cls = wall ? 't-w' : d > 0 && d <= 3 ? 'hl-move' : (c === 6 && r === 4) ? 'hl-atk' : 't-f';
-    h += `<polygon class="hx ${cls.startsWith('t-') ? cls : 't-f ' + cls}" points="${pts(x + 14, y + 16)}"/>`;
+    const fill = wall ? '#4b5964' : d > 0 && d <= 3 ? '#6cc3b8' : (c === 6 && r === 4) ? '#e08b84' : (c + r) % 3 ? '#cdd4cd' : '#c3cac3';
+    h += `<polygon class="hx" fill="${fill}" points="${pts(x + 14, y + 16)}"/>`;
   }
   const tok = (col, row, cls, txt) => { const [x, y] = center(col, row, S); return `<g class="tok ${cls}" transform="translate(${x + 14},${y + 16})"><circle r="${S * .68}"/><text class="ini" y="1">${txt}</text></g>`; };
   const [tx, ty] = center(7, 6, S);

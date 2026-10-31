@@ -1,9 +1,11 @@
 import { openCampaign, verifyMaster, insert, insertMany, update, remove, say, setCampaignState } from './db.js';
 import { $, $$, esc, toast, ask, confirmBox, copyText } from './ui.js';
-import { createBoard } from './board.js';
+import { createView } from './view.js';
+import { openDungeonMap } from './dungeonmap.js';
+import { THEME_LIST, LUCI, PROP_LIST, PROPS } from './props.js';
 import { mountDiceTray, roll, rollD20, randInt, pick } from './dice.js';
 import { STATS, STAT_NAME, BESTIARY, TRAPS, mod, hexesFor, fmtMod, crLabel } from './rules.js';
-import { generateRoom, randomMonster, randomTreasure, randomTrap, randomQuest, monsterFromPreset, trapFromPreset, itemsToText, parseItems } from './random.js';
+import { generateRoom, randomProps, randomMonster, randomTreasure, randomTrap, randomQuest, monsterFromPreset, trapFromPreset, itemsToText, parseItems } from './random.js';
 import { monsterAttack, monsterAutoTurn, damageEntity, damageChar, healChar, liveMonsters } from './combat.js';
 import { key, dist, neighbors, inBounds } from './hex.js';
 
@@ -16,7 +18,7 @@ try {
   if (okId !== saved.id) { localStorage.removeItem('dnd.master'); location.replace('index.html'); await new Promise(() => {}); }
 } catch (e) { fatal(e.message); throw e; }
 
-const S = { roomId: null, tool: { t: 'select' }, sel: null, moving: false, tab: 'stanze', pick: { monster: 'goblin', trap: 'dardi' } };
+const S = { roomId: null, tool: { t: 'select' }, sel: null, moving: false, tab: 'stanze', pick: { monster: 'goblin', trap: 'dardi', prop: 'torcia' } };
 let store;
 try { store = await openCampaign(saved.id, () => render()); } catch (e) { fatal(e.message); throw e; }
 const cid = saved.id;
@@ -28,11 +30,13 @@ const err = e => toast(e?.message || String(e), 'err');
 const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { err(e); } };
 
 /* ---------- mappa ---------- */
-const board = createBoard($('#board'), {
+const board = createView({ svg: $('#board'), host3d: $('#board3d'), handlers: {
   onClick({ col, row, stack }) {
     const r = room(); if (!r) return;
     if (S.moving && S.sel) return moveSelected(col, row);
     if (S.tool.t === 'place') return place(col, row);
+    if (S.tool.t === 'prop') return placeProp(col, row);
+    if (S.tool.t === 'unprop') return removeProp(col, row);
     if (S.tool.t === 'start') return update(store, 'rooms', r.id, { meta: { ...r.meta, start: { col, row } } }).then(() => toast('Punto di partenza impostato')).catch(err);
     if (S.tool.t === 'paint') return;
     const toSel = x => ({ kind: x.kind === 'pc' ? 'char' : 'entity', id: x.id });
@@ -48,7 +52,7 @@ const board = createBoard($('#board'), {
     board.paintCell(col, row, v);
   },
   onPaintEnd: guard(async () => { const r = room(); if (r) await update(store, 'rooms', r.id, { cells: { ...r.cells } }); }),
-});
+} });
 
 /* ---------- rendering ---------- */
 let rendering = false;
@@ -71,7 +75,8 @@ function renderToolbar() {
   const T = S.tool;
   const b = (t, v, label) => `<button class="btn ${T.t === t && (v === undefined || T.v === v) ? 'on' : ''}" data-act="tool" data-t="${t}" ${v ? `data-v="${v}"` : ''}>${label}</button>`;
   $('#toolbar').innerHTML = b('select', undefined, 'Seleziona') + '<span class="sep"></span>' + b('paint', 'w', 'Muro') + b('paint', 'f', 'Pavimento') + b('paint', 'd', 'Difficile') + b('paint', 'a', 'Acqua') + '<span class="sep"></span>' + b('start', undefined, 'Punto di partenza')
-    + (T.t === 'place' ? `<span class="sep"></span><button class="btn on" data-act="tool" data-t="select">Smetti di piazzare: ${esc(T.label)}</button>` : '');
+    + (T.t === 'place' ? `<span class="sep"></span><button class="btn on" data-act="tool" data-t="select">Smetti di piazzare: ${esc(T.label)}</button>` : '')
+    + (T.t === 'prop' || T.t === 'unprop' ? `<span class="sep"></span><button class="btn on" data-act="tool" data-t="select">Smetti con gli arredi${T.t === 'prop' ? ': ' + esc(PROPS[T.v].nome) : ' (rimozione)'}</button>` : '');
 }
 
 function renderInit() {
@@ -81,7 +86,8 @@ function renderInit() {
 }
 
 function renderBoard(r) {
-  $('#empty').hidden = !!r; $('#board').style.display = r ? '' : 'none';
+  $('#empty').hidden = !!r; board.show(!!r);
+  const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
   if (!r) { $('#empty').innerHTML = '<div><h2>Il tavolo è vuoto</h2><p>Crea la tua prima stanza, oppure fai generare un dungeon dalla scheda Stanze.</p></div>'; return; }
   board.render({ room: r, role: 'master', entities: entsIn(r), characters: store.characters.filter(c => c.room_id === r.id), sel: S.sel, paint: S.tool.t === 'paint', showStart: true });
 }
@@ -92,6 +98,8 @@ function renderStatus(r) {
   else if (T.t === 'paint') t = 'Trascina sulla mappa per disegnare.';
   else if (T.t === 'start') t = 'Clicca dove devono comparire i giocatori.';
   else if (T.t === 'place') t = `Clicca sulla mappa per piazzare: ${T.label}. Esc per smettere.`;
+  else if (T.t === 'prop') t = `Clicca per piazzare: ${PROPS[T.v].nome}${PROPS[T.v].sumuro ? ' (va sui muri)' : ''}. Un nuovo clic nello stesso esagono lo sostituisce.`;
+  else if (T.t === 'unprop') t = 'Clicca su un arredo per toglierlo.';
   $('#status').textContent = t;
 }
 
@@ -117,6 +125,8 @@ function tabAggiungi() {
   <div class="card stack"><h3>Tesori</h3><div class="btnrow"><button class="btn" data-act="custom-treasure">Crea tesoro…</button><button class="btn" data-act="random-treasure">Casuale</button></div></div>
   <div class="card stack"><h3>Trappole</h3><div class="fld"><label for="pk-t">Dal catalogo</label>${sel('pk-t', 'trap', TRAPS.map(t => ({ v: t.id, l: `${t.nome} (CD ${t.detect})` })))}</div>
     <div class="btnrow"><button class="btn" data-act="place-trap">Piazza</button><button class="btn" data-act="custom-trap">Personalizzata…</button><button class="btn" data-act="random-trap">Casuale</button></div></div>
+  <div class="card stack"><h3>Arredi e atmosfera</h3><p class="muted">Torce, colonne, sarcofagi, alberi… Decorano la stanza (alcuni bloccano il passaggio).</p><div class="fld"><label for="pk-p">Arredo</label>${sel('pk-p', 'prop', PROP_LIST)}</div>
+    <div class="btnrow"><button class="btn" data-act="place-prop">Piazza</button><button class="btn" data-act="unprop">Rimuovi</button><button class="btn" data-act="room-decor">Arreda a caso</button><button class="btn danger" data-act="room-undecor">Togli tutti</button></div></div>
   <div class="card stack"><h3>Porte</h3><p class="muted">Collegano due stanze e possono richiedere una quest.</p><button class="btn" data-act="custom-door">Crea porta…</button></div></div>`;
 }
 
@@ -272,6 +282,18 @@ async function moveSelected(col, row) {
   const s = S.sel; await update(store, s.kind === 'entity' ? 'entities' : 'characters', s.id, { col, row }).catch(err);
 }
 
+/* ---------- arredi ---------- */
+async function placeProp(col, row) {
+  const r = room(); const t = S.tool.v; const wall = r.cells[key(col, row)] === 'w';
+  if (!!PROPS[t].sumuro !== wall) return toast(PROPS[t].sumuro ? 'La torcia va sui muri.' : 'Questo arredo va sul pavimento.', 'err');
+  const props = (r.meta?.props || []).filter(p => !(p.c === col && p.r === row)); props.push({ t, c: col, r: row });
+  await update(store, 'rooms', r.id, { meta: { ...r.meta, props } });
+}
+async function removeProp(col, row) {
+  const r = room(); const props = (r.meta?.props || []).filter(p => !(p.c === col && p.r === row));
+  if (props.length !== (r.meta?.props || []).length) await update(store, 'rooms', r.id, { meta: { ...r.meta, props } });
+}
+
 /* ---------- stanze ---------- */
 const frame = (cols, rows) => { const c = {}; for (let x = 0; x < cols; x++) { c[key(x, 0)] = 'w'; c[key(x, rows - 1)] = 'w'; } for (let y = 0; y < rows; y++) { c[key(0, y)] = 'w'; c[key(cols - 1, y)] = 'w'; } return c; };
 
@@ -281,6 +303,8 @@ async function roomDialog(r) {
     { name: 'notes', label: 'Note per te (descrizione, segreti)', type: 'textarea', value: r?.notes || '' },
     { name: 'cols', label: 'Colonne', type: 'number', value: r?.cols ?? 14, min: 6, max: 30 },
     { name: 'rows', label: 'Righe', type: 'number', value: r?.rows ?? 10, min: 6, max: 24 },
+    { name: 'theme', label: 'Ambientazione', type: 'select', options: THEME_LIST, value: r?.meta?.theme || 'cripta' },
+    { name: 'luce', label: 'Illuminazione (per i giocatori)', type: 'select', options: LUCI, value: r?.meta?.luce || 'piena' },
     { name: 'fog', label: 'Nebbia: i giocatori vedono solo vicino ai personaggi', type: 'checkbox', value: r?.fog || false },
     ...(r ? [] : [{ name: 'walls', label: 'Cornice di muri', type: 'checkbox', value: true }]),
   ] });
@@ -365,22 +389,28 @@ const acts = {
   'copy-code': () => copyText(store.campaign.code),
   leave: () => { localStorage.removeItem('dnd.master'); location.href = 'index.html'; },
   tab: d => { S.tab = d.t; render(); },
-  tool: d => { S.tool = { t: d.t, v: d.v }; S.moving = false; render(); },
+  tool: async d => { if (d.t === 'paint' && board.mode === '3d') await board.set('2d'); S.tool = { t: d.t, v: d.v }; S.moving = false; render(); },
   'zoom-in': () => board.zoom(0.8), 'zoom-out': () => board.zoom(1.25), fit: () => board.fit(),
+  view: async () => { await board.set(board.mode === '2d' ? '3d' : '2d'); if (board.mode === '3d' && ['paint'].includes(S.tool.t)) { S.tool = { t: 'select' }; toast('In 3D si guarda e si piazza; per disegnare i muri torna in 2D.'); } render(); },
+  dmap: () => openDungeonMap({ store, role: 'master', currentRoomId: room()?.id, onOpen: id => { S.roomId = id; S.sel = null; render(); } }),
+  'place-prop': () => { S.tool = { t: 'prop', v: S.pick.prop }; S.sel = null; render(); },
+  unprop: () => { S.tool = { t: 'unprop' }; S.sel = null; render(); },
+  'room-decor': async () => { const r = room(); const taken = new Set(entsIn(r).map(e => key(e.col, e.row))); const props = randomProps(r, r.meta?.theme || 'cripta', { start: r.meta?.start || { col: 1, row: 1 }, taken }); await update(store, 'rooms', r.id, { meta: { ...r.meta, props } }); toast(`${props.length} arredi aggiunti`); },
+  'room-undecor': async () => { const r = room(); if (await confirmBox('Togliere tutti gli arredi di questa stanza?', 'Togli')) await update(store, 'rooms', r.id, { meta: { ...r.meta, props: [] } }); },
   'sel-clear': () => { S.sel = null; S.moving = false; render(); },
 
   'room-open': d => { S.roomId = d.id; S.sel = null; render(); },
   'room-new': async () => {
     const v = await roomDialog(); if (!v) return;
     const cols = v.cols ?? 14, rows = v.rows ?? 10;
-    const r = await insert(store, 'rooms', { campaign_id: cid, name: v.name.trim(), notes: v.notes, cols, rows, fog: v.fog, cells: v.walls ? frame(cols, rows) : {}, meta: { start: { col: 1, row: 1 } }, sort: Math.max(0, ...store.rooms.map(x => x.sort)) + 1 });
+    const r = await insert(store, 'rooms', { campaign_id: cid, name: v.name.trim(), notes: v.notes, cols, rows, fog: v.fog, cells: v.walls ? frame(cols, rows) : {}, meta: { start: { col: 1, row: 1 }, theme: v.theme, luce: v.luce, props: [] }, sort: Math.max(0, ...store.rooms.map(x => x.sort)) + 1 });
     S.roomId = r.id; render();
   },
   'room-edit': async () => {
     const r = room(); const v = await roomDialog(r); if (!v) return;
     const cols = v.cols ?? r.cols, rows = v.rows ?? r.rows;
     const cells = Object.fromEntries(Object.entries(r.cells).filter(([k]) => { const [c, y] = k.split(',').map(Number); return c < cols && y < rows; }));
-    await update(store, 'rooms', r.id, { name: v.name.trim(), notes: v.notes, cols, rows, fog: v.fog, cells });
+    await update(store, 'rooms', r.id, { name: v.name.trim(), notes: v.notes, cols, rows, fog: v.fog, cells, meta: { ...r.meta, theme: v.theme, luce: v.luce } });
   },
   'room-gen': async () => { const r = room(); await createGenerated(1, r && r.meta?.start ? (await confirmBox('Collegare la nuova stanza a «' + r.name + '» con una porta?', 'Sì, collega')) ? r : null : null); },
   'room-dungeon': async () => {
@@ -471,5 +501,6 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { S.tool = { t: 'select' }; S.moving = false; S.sel = null; render(); }
 });
 
+if (localStorage.getItem('dnd.view') === '3d') board.set('3d').then(render);
 mountDiceTray($('#dice-tray'), { who: () => 'Master', say: (kind, text) => say(store, 'Master', kind, text), canSecret: true });
 render();

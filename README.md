@@ -3,6 +3,13 @@
 Portale per giocare a D&D in compagnia: una pagina per il **Master**, una per i **giocatori**.
 Sito statico (nessuna build) + **Supabase** (database gratuito con aggiornamenti in tempo reale) + **Vercel** (hosting gratuito).
 
+## Novità: ambientazione, minimappa, mappa del dungeon e 3D
+- **Temi** per ogni stanza (cripta, caverna, radura, tempio, grotta di ghiaccio) con pavimenti a texture, muri a rilievo e roccia a tratteggio.
+- **Arredi**: torce, falò, colonne, statue, sarcofagi, altari, tavoli, botti, alberi, stalagmiti… Alcuni bloccano il passaggio. Si piazzano dalla scheda *Aggiungi → Arredi e atmosfera* oppure si fa «Arreda a caso».
+- **Illuminazione** (luminosa, fioca, buia): ai giocatori resta visibile solo ciò che è vicino a lanterne e torce; il Master vede sempre tutto.
+- **Minimappa** nell'angolo (clic per spostarsi) e **Mappa del dungeon** (pulsante 🗺): le stanze visitate, collegate dalle porte, con i passaggi chiusi e la posizione del gruppo.
+- **Vista 3D** (pulsante 3D): tessere esagonali in rilievo, arredi e **miniature** da tavolo per ogni classe e razza e per i mostri. Si ruota col trascinamento, si sposta col tasto destro e si ingrandisce con la rotellina. Per disegnare i muri si torna in 2D.
+
 ## Cosa fa
 
 **Master** (`/master`)
@@ -50,6 +57,6 @@ Oppure da terminale, dentro la cartella: `npx vercel` (poi `npx vercel --prod`).
 ## Struttura
 - `index.html`, `master.html`, `player.html`: le tre pagine.
 - `js/rules.js`: razze, classi, armi, magie, bestiario, trappole, enigmi (qui si personalizza il gioco).
-- `js/hex.js`: geometria a esagoni, percorsi e linea di vista. `js/board.js`: la mappa SVG.
+- `js/hex.js`: geometria a esagoni, percorsi e linea di vista. `js/board.js`: la mappa 2D. `js/board3d.js`: la vista 3D (three.js, caricata solo quando serve). `js/props.js`: temi e arredi. `js/dungeonmap.js`: la mappa del dungeon.
 - `js/combat.js`: attacchi, magie, trappole, porte, quest. `js/random.js`: generatori casuali.
 - `js/db.js`: collegamento a Supabase. `supabase/schema.sql`: tabelle e funzioni.

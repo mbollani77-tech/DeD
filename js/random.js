@@ -1,7 +1,8 @@
 // Generatori casuali: stanze, mostri, tesori, trappole, quest.
 import { randInt, pick, shuffle, rollDie } from './dice.js';
 import { BESTIARY, TRAPS, ITEMS, RIDDLES, SKILL_CHECKS, ROOM_NOUNS, ROOM_ADJ } from './rules.js';
-import { key, dist, neighbors, reachable } from './hex.js';
+import { key, dist, neighbors, reachable, inBounds } from './hex.js';
+import { THEMES, THEME_PROPS, PROPS, propBlocks } from './props.js';
 export { randInt, pick };
 
 export const roomName = () => { const [n, g] = pick(ROOM_NOUNS); const a = pick(ROOM_ADJ); return `${n} ${a[g === 'f' ? 0 : 1]}`; };
@@ -49,6 +50,41 @@ export function randomQuest(level = 1) {
   return { title: 'Porta con chiave', kind: 'key', data: { prompt: 'Una pesante serratura di ferro. La chiave deve essere nascosta qui intorno.', key_item: 'Chiave di ferro', consume: true }, needsKey: true };
 }
 
+
+export const pickTheme = () => pick(['cripta', 'cripta', 'caverna', 'tempio', 'foresta', 'ghiaccio']);
+export const pickLuce = theme => (theme === 'foresta' || theme === 'tempio' ? pick(['piena', 'piena', 'fioca']) : pick(['fioca', 'fioca', 'buia', 'piena']));
+
+/** Arredi coerenti col tema: torce sui muri e mobili sul pavimento, senza bloccare i passaggi. */
+export function randomProps(room, theme, { start = { col: 1, row: 1 }, exitFront = null, taken = new Set(), count = null } = {}) {
+  const { cols, rows, cells } = room; const props = []; const used = new Set(taken);
+  const isFloor = (c, r) => c > 0 && r > 0 && c < cols - 1 && r < rows - 1 && cells[key(c, r)] !== 'w';
+  // torce e luci sui muri
+  const torches = theme === 'foresta' ? 0 : theme === 'caverna' ? randInt(0, 1) : randInt(2, 5);
+  if (torches) {
+    const wallSpots = [];
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (cells[key(c, r)] === 'w' && neighbors(c, r).some(n => inBounds(room, n) && isFloor(n.col, n.row))) wallSpots.push({ c, r });
+    shuffle(wallSpots).filter((w, i, arr) => arr.slice(0, i).every(o => dist({ col: o.c, row: o.r }, { col: w.c, row: w.r }) > 3)).slice(0, torches).forEach(w => { props.push({ t: 'torcia', c: w.c, r: w.r }); used.add(key(w.c, w.r)); });
+  }
+  // arredi
+  const floors = []; for (let r = 1; r < rows - 1; r++) for (let c = 1; c < cols - 1; c++) if (isFloor(c, r)) floors.push({ col: c, row: r });
+  const cand = shuffle(floors.filter(h => dist(h, start) > 1 && !(exitFront && dist(h, exitFront) <= 1) && cells[key(h.col, h.row)] !== 'a'));
+  const want = count ?? randInt(4, 8); const list = THEME_PROPS[theme] || THEME_PROPS.cripta; const need = new Set([...floors.filter(h => true)].map(h => key(h.col, h.row)));
+  for (const h of cand) {
+    if (props.filter(p => p.t !== 'torcia').length >= want) break;
+    const k = key(h.col, h.row); if (used.has(k)) continue;
+    const t = pick(list); const trial = [...props, { t, c: h.col, r: h.row }];
+    if (PROPS[t].blocca) {
+      const blocked = propBlocks({ meta: { props: trial } });
+      const reach = reachable(room, start, 999, blocked);
+      const fine = floors.filter(f => !blocked.has(key(f.col, f.row)) && cells[key(f.col, f.row)] !== 'w');
+      const open = fine.filter(f => reach.has(key(f.col, f.row)) || (f.col === start.col && f.row === start.row)).length;
+      if (open < fine.length * 0.92 || (exitFront && !reach.has(key(exitFront.col, exitFront.row)))) continue;
+    }
+    props.push({ t, c: h.col, r: h.row }); used.add(k);
+  }
+  return props;
+}
+
 /** Genera una stanza completa. Le coordinate delle porte sono in `meta`. */
 export function generateRoom({ cols = randInt(12, 17), rows = randInt(9, 12), level = 1, party = 3, difficulty = 1, hasEntrance = true, hasExit = true, lockedChance = 0.6 } = {}) {
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -82,7 +118,10 @@ export function generateRoom({ cols = randInt(12, 17), rows = randInt(9, 12), le
     const ok = open.filter(h => reach.has(key(h.col, h.row)) || (h.col === start.col && h.row === start.row)).length;
     if (ok < open.length * 0.9 || (hasExit && !reach.has(key(exitFront.col, exitFront.row)))) continue;
 
-    const free = shuffle(open.filter(h => dist(h, start) > 2 && dist(h, exitFront) > 1 && reach.has(key(h.col, h.row))));
+    const theme = pickTheme(); const luce = pickLuce(theme);
+    const props = randomProps(room, theme, { start, exitFront: hasExit ? exitFront : null });
+    const propKeys = new Set(props.map(p => key(p.c, p.r)));
+    const free = shuffle(open.filter(h => dist(h, start) > 2 && dist(h, exitFront) > 1 && reach.has(key(h.col, h.row)) && !propKeys.has(key(h.col, h.row))));
     const entities = [];
     const put = (e, hidden = false) => { const h = free.pop(); if (h) entities.push({ hidden, ...e, col: h.col, row: h.row }); };
 
@@ -110,7 +149,7 @@ export function generateRoom({ cols = randInt(12, 17), rows = randInt(9, 12), le
       if (locked) { quest = randomQuest(level); if (quest.needsKey) put({ kind: 'treasure', name: 'Cassettina con chiave', data: { oro: 0, oggetti: [{ nome: 'Chiave di ferro', desc: 'Una chiave pesante, dall\'aria antica.' }], looted: false } }, rollDie(2) === 1); }
       entities.push({ kind: 'door', name: locked ? 'Porta sigillata' : 'Porta d\'uscita', col: exit.col, row: exit.row, hidden: false, _role: 'exit', data: { locked } });
     }
-    return { name: roomName(), cols, rows, cells, meta: { start, entrance, exit, exitFront }, entities, quest };
+    return { name: roomName(), cols, rows, cells, meta: { start, entrance, exit, exitFront, theme, luce, props }, entities, quest };
   }
   throw new Error('Generazione stanza fallita');
 }

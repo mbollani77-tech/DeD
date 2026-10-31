@@ -1,7 +1,8 @@
 // Regole di gioco: movimento, attacchi, magie, trappole, porte, quest, bottino.
 import { roll, rollD20, critExpr, scaleDice } from './dice.js';
 import { mod, prof, hexesFor } from './rules.js';
-import { update, patchData, say } from './db.js';
+import { update, patchData, say, setCampaignState } from './db.js';
+import { propBlocks } from './props.js';
 import { dist, los, key, reachable, hexesWithin } from './hex.js';
 
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -15,7 +16,7 @@ export const liveMonsters = (store, roomId) => store.entities.filter(e => e.room
 
 /** Esagoni occupati. Per i giocatori i mostri nascosti non bloccano; per i mostri le porte sono sempre chiuse. */
 export function blockedSet(store, room, { exceptEnt = null, exceptChar = null, monster = false } = {}) {
-  const s = new Set();
+  const s = propBlocks(room);
   store.entities.forEach(e => {
     if (e.room_id !== room.id || e.id === exceptEnt) return;
     if (e.kind === 'monster' && !e.data.dead && (monster || !e.hidden)) s.add(key(e.col, e.row));
@@ -23,6 +24,12 @@ export function blockedSet(store, room, { exceptEnt = null, exceptChar = null, m
   });
   store.characters.forEach(c => { if (c.room_id === room.id && c.id !== exceptChar && c.hp > 0) s.add(key(c.col, c.row)); });
   return s;
+}
+
+/** Ricorda le stanze già visitate (la mappa del dungeon le mostra ai giocatori). */
+export async function markVisited(store, roomId) {
+  const v = store.campaign.state?.visited || [];
+  if (roomId && !v.includes(roomId)) await setCampaignState(store, { visited: [...v, roomId] });
 }
 
 export async function damageEntity(store, ent, dmg) {
@@ -166,6 +173,7 @@ export async function moveCharacter(store, ch, room, hex, cost) {
   const door = store.entities.find(e => e.room_id === room.id && e.kind === 'door' && e.col === hex.col && e.row === hex.row);
   if (door && !door.data.locked && door.data.target_room) {
     await update(store, 'characters', ch.id, { room_id: door.data.target_room, col: door.data.tcol ?? 1, row: door.data.trow ?? 1, move_left: left });
+    markVisited(store, door.data.target_room);
     return say(store, ch.name, 'event', `${ch.name} attraversa «${door.name}».`);
   }
   await update(store, 'characters', ch.id, { col: hex.col, row: hex.row, move_left: left });
@@ -177,6 +185,7 @@ export async function moveCharacter(store, ch, room, hex, cost) {
 export async function passDoor(store, ch, door) {
   if (door.data.locked || !door.data.target_room) throw new Error('Questa porta non porta da nessuna parte.');
   await update(store, 'characters', ch.id, { room_id: door.data.target_room, col: door.data.tcol ?? 1, row: door.data.trow ?? 1 });
+  markVisited(store, door.data.target_room);
   say(store, ch.name, 'event', `${ch.name} attraversa «${door.name}».`);
 }
 
