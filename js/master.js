@@ -84,7 +84,10 @@ function renderToolbar() {
 function renderInit() {
   const st = store.campaign.state || {}; const el = $('#init'); const list = st.init || [];
   el.hidden = !list.length; if (!list.length) return;
-  el.innerHTML = `<b>Round ${st.round || 1}</b>` + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''}">${esc(i.name)} ${i.roll}</span>`).join('');
+  const cur = list[st.turn || 0]; const mon = cur?.k === 'e';
+  el.innerHTML = `<span class="turn ${mon ? 'mon' : 'pc'}"><i></i><span>Tocca a <b>${esc(cur?.name || '')}</b> <small>${mon ? 'mostro' : 'giocatore'}</small></span></span><b class="rd">Round ${st.round || 1}</b>`
+    + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''} ${i.k === 'e' ? 'm' : ''}">${esc(i.name)} ${i.roll}</span>`).join('')
+    + '<button class="btn sm nextturn" data-act="init-next">Prossimo turno</button>';
 }
 
 function renderBoard(r) {
@@ -92,7 +95,7 @@ function renderBoard(r) {
   const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
   $('[data-act="mini"]')?.classList.toggle('on', board.miniOn);
   if (!r) { $('#empty').innerHTML = '<div><h2>Il tavolo è vuoto</h2><p>Crea la tua prima stanza, oppure fai generare un dungeon dalla scheda Stanze.</p></div>'; return; }
-  board.render({ room: r, role: 'master', entities: entsIn(r), characters: store.characters.filter(c => c.room_id === r.id), sel: S.sel, paint: S.tool.t === 'paint', showStart: true });
+  board.render({ room: r, role: 'master', entities: entsIn(r), characters: store.characters.filter(c => c.room_id === r.id), sel: S.sel, turnId: (store.campaign.state?.init || [])[store.campaign.state?.turn || 0]?.id, paint: S.tool.t === 'paint', showStart: true });
 }
 
 function renderStatus(r) {
@@ -377,9 +380,15 @@ async function resetMoves() { for (const c of store.characters) { const m = hexe
 async function nextTurn() {
   const st = store.campaign.state || {}; const init = st.init || [];
   if (!init.length) return toast('Tira prima l\'iniziativa.', 'err');
-  let turn = (st.turn || 0) + 1, round = st.round || 1;
-  if (turn >= init.length) { turn = 0; round++; await resetMoves(); say(store, 'Master', 'event', `Inizia il round ${round}.`); }
+  let turn = st.turn || 0, round = st.round || 1, newRound = false;
+  const alive = i => i.k === 'c' ? (store.characters.find(c => c.id === i.id)?.hp ?? 0) > 0 : !!store.entities.find(e => e.id === i.id && !e.data.dead);
+  for (let g = 0; g < init.length; g++) { // salta chi è a terra o sconfitto
+    turn++; if (turn >= init.length) { turn = 0; round++; newRound = true; }
+    if (alive(init[turn])) break;
+  }
+  if (newRound) { await resetMoves(); say(store, 'Master', 'event', `Inizia il round ${round}.`); }
   await setCampaignState(store, { turn, round });
+  const cur = init[turn]; if (cur) say(store, 'Master', 'event', `Tocca a ${cur.name}${cur.k === 'e' ? ' (mostro)' : ''}.`);
 }
 async function hpDialog(title) {
   return ask({ title, ok: 'Applica', fields: [{ name: 'n', label: 'Quantità', type: 'number', value: 1, min: 0, required: true }, { name: 'k', label: 'Effetto', type: 'select', value: 'dmg', options: [{ v: 'dmg', l: 'Danni' }, { v: 'heal', l: 'Cura' }] }] });

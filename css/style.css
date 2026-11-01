@@ -265,3 +265,17 @@ button.row .muted { grid-column: 1; font-size: .88rem; } button.row .chip { grid
 .rdie.fumble svg polygon, .rdie.fumble svg rect { fill: #f3d9d6; stroke: #ae3f3a; } .rdie.fumble svg text { fill: #ae3f3a; }
 
 .zoom .btn.on { background: var(--teal-l); border-color: var(--teal); color: var(--teal-d); }
+
+/* indicatore di turno */
+.initstrip { flex-wrap: wrap; row-gap: .3rem; }
+.initstrip .turn { display: inline-flex; align-items: center; gap: .45rem; padding: .22rem .8rem .22rem .55rem; border-radius: 99px; font-size: .95rem; background: #277a7340; border: 1px solid #5fd4a666; color: #d6f5ea; }
+.initstrip .turn i { width: .6rem; height: .6rem; border-radius: 50%; background: #5fd4a6; box-shadow: 0 0 0 0 #5fd4a699; animation: tpulse 1.4s ease-out infinite; }
+.initstrip .turn small { opacity: .7; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; margin-left: .15rem; }
+.initstrip .turn.mon { background: #ae3f3a40; border-color: #e08b8499; color: #ffd9d6; } .initstrip .turn.mon i { background: #e8625b; }
+.initstrip .turn.mine { background: #bd8329; border-color: #f4d58d; color: #1d1405; font-size: 1.05rem; } .initstrip .turn.mine i { background: #1d1405; }
+.initstrip .rd { color: #8fa3ad; font-size: .8rem; margin: 0 .2rem; } .initstrip .it.m { background: #ae3f3a33; } .initstrip .it.now.m { background: #e8625b; color: #1d0907; }
+.initstrip .nextturn { margin-left: auto; background: #ffffff14; border-color: #ffffff30; color: #fff; }
+@keyframes tpulse { 0% { box-shadow: 0 0 0 0 #ffffff66; } 70%, 100% { box-shadow: 0 0 0 .5rem #0000; } }
+.tok circle.turnring { fill: none !important; stroke: #f4d58d !important; stroke-width: 3.2 !important; stroke-dasharray: 7 5; transform-box: fill-box; transform-origin: center; animation: tspin 7s linear infinite; filter: drop-shadow(0 0 4px #f4d58d); pointer-events: none; }
+@keyframes tspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .initstrip .turn i, .tok circle.turnring { animation: none; } }

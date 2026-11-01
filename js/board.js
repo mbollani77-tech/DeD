@@ -58,7 +58,7 @@ export function createBoard(svg, h = {}) {
   const fit = () => { if (d) { view = fullBox(d.room); apply(); } };
 
   function token(t, cx, cy) {
-    return `<g class="tok ${t.cls} ${t.ghost ? 'ghost' : ''} ${t.sel ? 'sel' : ''}" data-c="${t.col}" data-r="${t.row}" data-kind="${t.kind}" data-id="${t.id}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})"><title>${esc(t.title)}</title>${t.body}${t.sel ? `<circle class="selring" r="${SIZE * 0.86}"/>` : ''}</g>`;
+    return `<g class="tok ${t.cls} ${t.ghost ? 'ghost' : ''} ${t.sel ? 'sel' : ''}" data-c="${t.col}" data-r="${t.row}" data-kind="${t.kind}" data-id="${t.id}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})"><title>${esc(t.title)}</title>${t.body}${t.turn ? `<circle class="turnring" r="${SIZE * 0.98}"/>` : ''}${t.sel ? `<circle class="selring" r="${SIZE * 0.86}"/>` : ''}</g>`;
   }
   const hpBar = (hp, max) => { const w = SIZE * 1.1, p = Math.max(0, Math.min(1, hp / (max || 1))); return `<rect class="hp-bg" x="${-w / 2}" y="${SIZE * 0.62}" width="${w}" height="4" rx="2"/><rect class="hp-fg ${p < 0.34 ? 'low' : p < 0.67 ? 'mid' : ''}" x="${-w / 2}" y="${SIZE * 0.62}" width="${(w * p).toFixed(1)}" height="4" rx="2"/>`; };
   const glyph = (g, y = 0, s = 0.95) => `<text class="glyph" y="${y}" font-size="${SIZE * s}">${g}</text>`;
@@ -113,7 +113,7 @@ export function createBoard(svg, h = {}) {
       if (d.visible && !d.visible.has(key(e.col, e.row))) return;
       if (!master && luce === 'buia' && e.kind === 'monster' && !e.data.dead && !lit(e.col, e.row)) return;
       const dd = e.data || {}; const s = sel && sel.kind === 'entity' && sel.id === e.id;
-      const base = { id: e.id, col: e.col, row: e.row, ghost: master && e.hidden, sel: s, title: e.name + (e.hidden ? ' (nascosto)' : '') };
+      const base = { id: e.id, col: e.col, row: e.row, ghost: master && e.hidden, sel: s, turn: d.turnId === e.id && !dd.dead, title: e.name + (e.hidden ? ' (nascosto)' : '') };
       if (e.kind === 'door') toks.push({ ...base, z: 0, kind: 'entity', cls: 'door', body: `<path d="M-11 12 V-6 Q-11 -14 0 -14 Q11 -14 11 -6 V12 Z" fill="${dd.locked ? '#6b3a2a' : '#8a5f34'}" stroke="#2c1a0e" stroke-width="1.8"/><path d="M0 -14 V12 M-11 -2 H11" stroke="#2c1a0e" stroke-width="1" opacity=".6"/><circle cx="5" cy="2" r="1.6" fill="#e5c76a"/>${dd.locked ? `<rect x="-4.5" y="-2" width="9" height="8" rx="1.5" fill="#d9b43f" stroke="#5a4210"/><path d="M-2.5 -2 V-5 a2.5 2.5 0 0 1 5 0 V-2" fill="none" stroke="#5a4210" stroke-width="1.6"/>` : ''}` });
       else if (e.kind === 'trap') toks.push({ ...base, z: 1, kind: 'entity', cls: 'trap' + (dd.armed === false ? ' off' : ''), body: dd.armed === false ? glyph('✖', 0, 0.8) : `<polygon points="0,-13 13,10 -13,10" fill="#e5a02e" stroke="#5a3a07" stroke-width="1.8"/><path d="M0 -5 V3" stroke="#3a2400" stroke-width="2.4"/><circle cy="7" r="1.5" fill="#3a2400"/>` });
       else if (e.kind === 'treasure') toks.push({ ...base, z: 1, kind: 'entity', cls: 'treasure' + (dd.looted ? ' off' : ''), body: `${shadow}<rect x="-11" y="-5" width="22" height="14" rx="2" fill="${dd.looted ? '#6e5a3a' : '#9a6a2f'}" stroke="#3c2410" stroke-width="1.6"/><path d="M-11 -5 Q0 -15 11 -5 Z" fill="${dd.looted ? '#7d6844' : '#b98238'}" stroke="#3c2410" stroke-width="1.6"/><rect x="-2" y="-3" width="4" height="6" fill="${dd.looted ? '#8a8a8a' : '#e5c76a'}" stroke="#3c2410"/>` });
@@ -124,7 +124,7 @@ export function createBoard(svg, h = {}) {
     });
     (d.characters || []).forEach(c => {
       const s = sel && sel.kind === 'char' && sel.id === c.id; const me = d.meId === c.id;
-      toks.push({ id: c.id, col: c.col, row: c.row, z: 3, kind: 'pc', sel: s, title: `${c.name} (${c.hp}/${c.max_hp} PF)`, cls: 'pc' + (me ? ' me' : '') + (c.hp <= 0 ? ' down' : ''), body: `${shadow}<circle r="${SIZE * 0.68}"/><circle r="${SIZE * 0.5}" class="inner"/><text class="ini" y="1">${initials(c.name)}</text>${hpBar(c.hp, c.max_hp)}` });
+      toks.push({ id: c.id, col: c.col, row: c.row, z: 3, kind: 'pc', sel: s, turn: d.turnId === c.id && c.hp > 0, title: `${c.name} (${c.hp}/${c.max_hp} PF)`, cls: 'pc' + (me ? ' me' : '') + (c.hp <= 0 ? ' down' : ''), body: `${shadow}<circle r="${SIZE * 0.68}"/><circle r="${SIZE * 0.5}" class="inner"/><text class="ini" y="1">${initials(c.name)}</text>${hpBar(c.hp, c.max_hp)}` });
     });
     html += '<g class="tokens">' + toks.sort((a, b) => a.z - b.z).map(t => { const [cx, cy] = center(t.col, t.row, SIZE); return token(t, cx, cy); }).join('') + '</g>';
 

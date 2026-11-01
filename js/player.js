@@ -117,14 +117,17 @@ function renderTop(ch) {
 function renderToolbar(r) { const t = $('#toolbar'); t.innerHTML = r ? `<strong style="color:#e8efec">${esc(r.name)}</strong>` : ''; t.hidden = !r; }
 function renderInit(ch) {
   const st = store.campaign.state || {}; const list = st.init || []; const el = $('#init'); el.hidden = !list.length; if (!list.length) return;
-  el.innerHTML = `<b>Round ${st.round || 1}</b>` + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''}">${esc(i.name)} ${i.roll}${i.id === ch.id ? ' (tu)' : ''}</span>`).join('');
+  const cur = list[st.turn || 0]; const mine = cur?.id === ch.id; const mon = cur?.k === 'e';
+  el.innerHTML = `<span class="turn ${mine ? 'mine' : mon ? 'mon' : 'pc'}"><i></i><span>${mine ? '<b>Tocca a te!</b>' : `Tocca a <b>${esc(cur?.name || '')}</b> <small>${mon ? 'mostro' : 'giocatore'}</small>`}</span></span><b class="rd">Round ${st.round || 1}</b>`
+    + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''} ${i.k === 'e' ? 'm' : ''}">${esc(i.name)} ${i.roll}${i.id === ch.id ? ' (tu)' : ''}</span>`).join('');
+  const tk = `${st.round || 1}:${st.turn || 0}:${cur?.id}`; if (mine && S.lastTurn !== tk) toast('Tocca a te!'); S.lastTurn = tk;
 }
 function renderBoard(ch, r) {
   const empty = $('#empty'); empty.hidden = !!r; board.show(!!r);
   const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
   $('[data-act="mini"]')?.classList.toggle('on', board.miniOn);
   if (!r) { empty.innerHTML = '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
-  board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, visible: visibleSet(r) });
+  board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, turnId: (store.campaign.state?.init || [])[store.campaign.state?.turn || 0]?.id, visible: visibleSet(r) });
 }
 function renderActionbar(ch) {
   const el = $('#actionbar'); el.hidden = false;
