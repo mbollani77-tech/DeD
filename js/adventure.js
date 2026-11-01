@@ -8,6 +8,7 @@ import { partyLevel } from './engine.js';
 import { key, dist, neighbors, inBounds } from './hex.js';
 import { pick } from './dice.js';
 import { hexesFor, FRUTTI } from './rules.js';
+import { exploreWorld } from './journey.js';
 
 export async function createGenerated(store, n, link, opts = {}, ui = {}) {
   const cid = store.campaign.id; const toast = (...a) => ui.toast?.(...a); const entsIn = r => store.entities.filter(e => e.room_id === r.id);
@@ -77,6 +78,7 @@ async function buildWorldCampaign(store, cfg, ui = {}) {
   await setCampaignState(store, { config: { mode: 'mondo', world: world.id, levels: cfg.levels, diff: cfg.diff, monsters: cfg.monsters, encounters: cfg.encounters, auto: !!cfg.auto, autoLoot: cfg.autoLoot !== false, fog: !!cfg.fog }, worldQuests: [] });
   const spots = [w.meta.start, ...freeNear(w.cells, w.cols, w.rows, w.meta.start, new Set([...placeKeys, key(w.meta.start.col, w.meta.start.row)]), store.characters.length)];
   for (const [i, c] of store.characters.entries()) { const s = spots[i] || spots[0]; await update(store, 'characters', c.id, { room_id: world.id, col: s.col, row: s.row, move_left: hexesFor(c.speed) * 2 }); }
+  await exploreWorld(store, world, w.meta.start, { name: 'Il gruppo' });
   toast(`Mondo creato: ${w.places.filter(p => p.tipo === 'paese').length} paesi e ${cfg.levels.length} dungeon. Il gruppo parte dal primo paese.`);
   return world;
 }

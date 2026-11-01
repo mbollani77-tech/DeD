@@ -2,7 +2,7 @@
 import { insert, insertMany, update, remove, say, setCampaignState } from './db.js';
 import { randInt, rollD20 } from './dice.js';
 import { mod } from './rules.js';
-import { key, dist } from './hex.js';
+import { key, dist, hexesWithin } from './hex.js';
 import { generateRoom } from './random.js';
 import { TERRAIN, terrainAt, rollEncounter, freeNear } from './world.js';
 import { resetEco } from './economia.js';
@@ -16,13 +16,33 @@ export const worldMove = ch => Math.max(1, Math.round((ch.speed || 30) / 5)) * 2
 export const inCombat = store => (store.campaign.state?.init || []).length > 0;
 const state = store => store.campaign.state || {};
 
+/* ---------- esplorazione: il mondo si scopre camminando ---------- */
+export const EXPLORE_R = 4; // quanto lontano si vede il terreno
+export const FIND_R = 2;    // da quanto vicino compare un luogo (albero, oasi, paese, dungeon)
+const cellId = (room, c, r) => r * room.cols + c;
+/** Caselle del mondo già esplorate (ricordate) più quelle che si vedono adesso intorno ai personaggi. */
+export function worldVisible(store, room) {
+  const set = new Set(); for (const i of (store.campaign.state?.explored?.[room.id] || [])) set.add(key(i % room.cols, Math.floor(i / room.cols)));
+  for (const c of store.characters.filter(x => x.room_id === room.id && x.hp > 0)) hexesWithin(room, c, EXPLORE_R).forEach(h => set.add(key(h.col, h.row)));
+  return set;
+}
+/** Un luogo del mondo si vede solo se già scoperto o se qualcuno del gruppo gli è a meno di FIND_R esagoni. */
+export const placeKnown = (store, e, room) => !(room?.meta?.world && e.kind === 'door' && e.data?.place) || (store.campaign.state?.found || []).includes(e.id) || store.characters.some(c => c.room_id === room.id && c.hp > 0 && dist(c, e) <= FIND_R);
+/** Ricorda le caselle viste e i luoghi scoperti da questa posizione. */
+export async function exploreWorld(store, room, hex, who) {
+  const st = store.campaign.state || {}; const old = new Set(st.explored?.[room.id] || []); const before = old.size;
+  for (const h of hexesWithin(room, hex, EXPLORE_R)) old.add(cellId(room, h.col, h.row));
+  const found = new Set(st.found || []);
+  const news = store.entities.filter(x => x.room_id === room.id && x.kind === 'door' && x.data.place && dist(x, hex) <= FIND_R && !found.has(x.id));
+  news.forEach(e => found.add(e.id));
+  if (old.size === before && !news.length) return;
+  await setCampaignState(store, { explored: { ...(st.explored || {}), [room.id]: [...old] }, found: [...found] });
+  for (const e of news) { if (e.hidden) await update(store, 'entities', e.id, { hidden: false }); say(store, who.name, 'event', `${who.name} scopre: ${e.name}!`); }
+}
+
 /** Dopo ogni spostamento sulla mappa del mondo: scopre i luoghi vicini e tira per un incontro. */
 export async function worldTravel(store, ch, room, hex, cost) {
-  // luoghi nascosti entro 3 esagoni diventano visibili
-  for (const e of store.entities.filter(x => x.room_id === room.id && x.kind === 'door' && x.data.place && x.hidden && dist(x, hex) <= 3)) {
-    await update(store, 'entities', e.id, { hidden: false });
-    say(store, ch.name, 'event', `${ch.name} avvista in lontananza: ${e.name}!`);
-  }
+  await exploreWorld(store, room, hex, ch); // si vede il terreno intorno e si scoprono i luoghi a meno di 2 esagoni
   const places = store.entities.filter(x => x.room_id === room.id && x.kind === 'door' && x.data.place).map(x => ({ tipo: x.data.place, col: x.col, row: x.row }));
   if (rollEncounter(room, hex, cost, places, state(store).config?.encounters)) await startEncounter(store, ch, room, hex);
 }

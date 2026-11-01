@@ -74,7 +74,7 @@ export function createBoard(svg, h = {}) {
   const fit = () => { if (d) { view = fullBox(d.room); apply(); } };
 
   function token(t, cx, cy) {
-    return `<g class="tok ${t.cls} ${t.ghost ? 'ghost' : ''} ${t.sel ? 'sel' : ''}" data-c="${t.col}" data-r="${t.row}" data-kind="${t.kind}" data-id="${t.id}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})"><title>${esc(t.title)}</title>${t.body}${t.turn ? `<circle class="turnring" r="${SIZE * 0.98}"/>` : ''}${t.stati ? `<text class="stico" y="${-SIZE * 0.95}">${t.stati}</text>` : ''}${t.sel ? `<circle class="selring" r="${SIZE * 0.86}"/>` : ''}</g>`;
+    return `<g class="tok ${t.cls} ${t.ghost ? 'ghost' : ''} ${t.sel ? 'sel' : ''}" data-c="${t.col}" data-r="${t.row}" data-kind="${t.kind}" data-id="${t.id}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})"><title>${esc(t.title)}</title>${/\bme\b/.test(t.cls || '') ? `<circle class="mering" r="${SIZE * 1.08}"/><path class="mearrow" d="M0 ${-SIZE * 1.05} l${SIZE * 0.4} ${-SIZE * 0.62} h${-SIZE * 0.8} z"/>` : ''}${t.body}${t.turn ? `<circle class="turnring" r="${SIZE * 0.98}"/>` : ''}${t.stati ? `<text class="stico" y="${-SIZE * 0.95}">${t.stati}</text>` : ''}${t.sel ? `<circle class="selring" r="${SIZE * 0.86}"/>` : ''}</g>`;
   }
   const hpBar = (hp, max) => { const w = SIZE * 1.1, p = Math.max(0, Math.min(1, hp / (max || 1))); return `<rect class="hp-bg" x="${-w / 2}" y="${SIZE * 0.62}" width="${w}" height="4" rx="2"/><rect class="hp-fg ${p < 0.34 ? 'low' : p < 0.67 ? 'mid' : ''}" x="${-w / 2}" y="${SIZE * 0.62}" width="${(w * p).toFixed(1)}" height="4" rx="2"/>`; };
   const glyph = (g, y = 0, s = 0.95) => `<text class="glyph" y="${y}" font-size="${SIZE * s}">${g}</text>`;
@@ -204,6 +204,8 @@ export function createBoard(svg, h = {}) {
     render, fit, zoom, panToXY,
     get miniOn() { return miniOn; },
     setMini(on) { miniOn = !!on; localStorage.setItem('dnd.mini', miniOn ? '1' : '0'); mini.hidden = !miniOn || !d; return miniOn; },
+    /** Porta il personaggio al centro della vista (e, se si è troppo lontani, lo ingrandisce). */
+    focus(col, row) { if (!view) return; const [x, y] = center(col, row, SIZE); const maxW = SIZE * 24; if (view.w > maxW) { const k = maxW / view.w; view.w *= k; view.h *= k; } view.x = x - view.w / 2; view.y = y - view.h / 2; apply(); },
     paintCell(c, r, t) {
       const p = svg.querySelector(`polygon.hx[data-c="${c}"][data-r="${r}"]`); if (!p) return;
       p.setAttribute('fill', t === 'w' ? theme.wall : t === 'a' ? theme.water : t === 'd' ? theme.diff : theme.floor[Math.floor(hash(c, r, 0) * 3)]);

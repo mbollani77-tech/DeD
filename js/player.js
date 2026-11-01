@@ -10,6 +10,7 @@ import { mountDicebar } from './dicebar.js';
 import { setMood, onLog, moodFor, play, soundDialog, soundOn } from './sound.js';
 import { talkTo, questsHtml, learnSpell } from './town.js';
 import { enterOasi } from './oasi.js';
+import { worldVisible, placeKnown } from './journey.js';
 import { raccogli } from './alberi.js';
 import { spendPoints } from './levelup.js';
 import { runAutoMonsters, endTurn, skipTurn, partyLevel, startWatchdog, kickMonsters } from './engine.js';
@@ -98,6 +99,7 @@ function computeHL(ch, r) {
 }
 
 function visibleSet(r) {
+  if (r.meta?.world) return worldVisible(store, r); // sul mondo si vede ciò che si è esplorato
   if (!r.fog) return null;
   const set = new Set();
   const pcs = store.characters.filter(c => c.room_id === r.id && c.hp > 0);
@@ -148,34 +150,32 @@ function renderBoard(ch, r) {
   const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
   $('[data-act="mini"]')?.classList.toggle('on', board.miniOn);
   if (!r) { empty.innerHTML = store.campaign.state?.coop ? (store.rooms.length ? '<div class="fail-box"><h2>Un attimo…</h2><p>Il tuo personaggio sta per entrare nell\'avventura.</p><p class="muted">Se questa schermata non cambia entro un minuto, la creazione si è interrotta a metà: puoi cancellare le stanze e ricominciare da capo.</p><button class="btn" data-act="adv-reset">Cancella e ricomincia</button></div>' : '<div><h2>Inizia l\'avventura</h2><p>Scegli come sarà: il gioco crea mappa, mostri e tesori. Prima crea il tuo personaggio (e gli amici possono unirsi col codice in alto).</p><button class="btn primary" data-act="adv-start">Crea l\'avventura</button></div>') : '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
-  board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, turnId: (store.campaign.state?.init || [])[store.campaign.state?.turn || 0]?.id, visible: visibleSet(r) });
+  board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden && placeKnown(store, e, r)), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, turnId: (store.campaign.state?.init || [])[store.campaign.state?.turn || 0]?.id, visible: visibleSet(r) });
 }
-/** Tutto ciò con cui si può interagire qui vicino: tesori, bottini, abitanti, alberi, oasi, porte, trappole. Entro 8 esagoni; più lontano non compare. */
+/** Con cosa si può interagire adesso: compare solo ciò che è accanto a te (alberi e oasi: solo se sei sopra il loro esagono). */
 function interactions(ch, r) {
   if (!r || ch.hp <= 0) return [];
-  const from = { col: ch.col, row: ch.row }; const out = []; let reach = null;
-  const near = e => { if (dist(ch, e) <= 1) return 0; reach ||= reachable(r, from, moveBudget(store, ch), blockedSet(store, r, { exceptChar: ch.id })); let best = null; for (const [k, cost] of reach) { const [col, row] = k.split(',').map(Number); if (dist({ col, row }, e) <= 1 && (best === null || cost < best)) best = cost; } return best; };
-  for (const e of store.entities.filter(x => x.room_id === r.id && !x.hidden && dist(ch, x) <= 8)) {
+  const out = [];
+  for (const e of store.entities.filter(x => x.room_id === r.id && !x.hidden && placeKnown(store, x, r) && dist(ch, x) <= 1)) {
     const d = e.data || {}; const dd = dist(ch, e); let it = null;
     if (e.kind === 'treasure' && !d.looted) it = d.locked ? { icon: '🔒', title: e.name, sub: 'chiuso: tenta di aprirlo', act: 'door' } : { icon: '📦', title: `Apri ${e.name}`, sub: 'tesoro', act: 'loot' };
     else if (e.kind === 'monster' && d.dead && d.loot && !d.looted) it = { icon: '💀', title: `Saccheggia ${e.name}`, sub: 'bottino', act: 'loot' };
-    else if (e.kind === 'trap' && d.armed !== false && dd <= 1) it = { icon: '🪤', title: `Disarma ${e.name}`, sub: `CD ${d.disarm}`, act: 'disarm' };
+    else if (e.kind === 'trap' && d.armed !== false) it = { icon: '🪤', title: `Disarma ${e.name}`, sub: `CD ${d.disarm}`, act: 'disarm' };
     else if (e.kind === 'npc') it = { icon: '💬', title: `Parla con ${e.name}`, sub: ({ locanda: 'locanda e ingaggi', negozio: 'negozio', voci: 'voci e incarichi', prigioniero: 'prigioniero', viandante: 'viandante' })[d.role] || 'abitante', act: 'talk', primary: true };
-    else if (e.kind === 'door' && d.place === 'albero') it = { icon: d.icon || '🍎', title: 'Raccogli i frutti', sub: e.name, act: 'raccogli', primary: true };
-    else if (e.kind === 'door' && d.place === 'oasi') it = { icon: d.icon || '⛲', title: "Entra nell'oasi", sub: `${e.name} · tira il d20`, act: 'enter-oasi', primary: true };
+    else if (e.kind === 'door' && d.place === 'albero') { if (dd === 0) it = { icon: d.icon || '🍎', title: 'Raccogli i frutti', sub: e.name, act: 'raccogli', primary: true }; }
+    else if (e.kind === 'door' && d.place === 'oasi') { if (dd === 0) it = { icon: d.icon || '⛲', title: "Entra nell'oasi", sub: `${e.name} · tira il d20`, act: 'enter-oasi', primary: true }; }
     else if (e.kind === 'door') {
       if (d.waiting) it = { icon: '🔒', title: e.name, sub: 'sigillata fino al prossimo dungeon finito', act: null };
       else if (d.locked) it = { icon: '🚪', title: e.name, sub: d.quest_id ? 'bloccata: tenta di aprirla' : 'bloccata (decide il Master)', act: d.quest_id ? 'door' : null };
-      else if (d.target_room && dd <= 3) it = { icon: d.icon || '🚪', title: `Attraversa ${e.name}`, sub: 'porta', act: 'pass', primary: true };
+      else if (d.target_room) it = { icon: d.icon || '🚪', title: `Attraversa ${e.name}`, sub: 'porta', act: 'pass', primary: true };
     }
-    if (!it) continue;
-    const cost = it.act ? near(e) : null; out.push({ ...it, e, d: dd, cost, off: !it.act || cost === null });
+    if (it) out.push({ ...it, e, d: dd, off: !it.act });
   }
   return out.sort((a, b) => a.d - b.d).slice(0, 6);
 }
 const interHtml = (ch, r) => {
   const list = interactions(ch, r); if (!list.length) return '';
-  return `<div class="grp"><h4>Interazioni</h4>${list.map(i => { const far = i.d > 1; return `<button class="btn inter ${i.primary ? 'primary' : ''}" data-act="${far ? 'go-do' : i.act}" data-id="${i.e.id}" ${far ? `data-do="${i.act}"` : ''} ${i.off ? 'disabled' : ''} title="${esc(i.title + ' — ' + i.sub)}"><span class="ic">${i.icon}</span><span class="tx"><b>${esc(i.title)}</b><small>${esc(i.sub)}${far ? (i.off ? ` · a ${i.d} esagoni, troppo lontano` : ` · a ${i.d} esagoni: ti avvicini e lo fai`) : ''}</small></span></button>`; }).join('')}</div>`;
+  return `<div class="grp"><h4>Interazioni <small class="free">gratis: niente azione</small></h4>${list.map(i => `<button class="btn inter ${i.primary ? 'primary' : ''}" data-act="${i.act || 'noop'}" data-id="${i.e.id}" ${i.off ? 'disabled' : ''} title="${esc(i.title + ' — ' + i.sub)}"><span class="ic">${i.icon}</span><span class="tx"><b>${esc(i.title)}</b><small>${esc(i.sub)}</small></span></button>`).join('')}</div>`;
 };
 
 function renderActionbar(ch) {
@@ -355,16 +355,8 @@ const acts = {
   loot: d => busy(() => lootEntity(store, me(), ent(d.id))),
   talk: d => busy(() => talkTo(store, me(), ent(d.id))),
   'spend-points': () => busy(() => spendPoints(store, me())),
+  me: () => { const c = me(); if (c) { board.focus(c.col, c.row); toast(`Ecco ${c.name}.`); } },
   kick: () => busy(() => kickMonsters(store)),
-  'go-do': d => busy(async () => {
-    const ch = me(), r = roomOf(ch), e = ent(d.id); if (!e || !r) return;
-    const reach = reachable(r, { col: ch.col, row: ch.row }, moveBudget(store, ch), blockedSet(store, r, { exceptChar: ch.id }));
-    let best = null; for (const [k, cost] of reach) { const [col, row] = k.split(',').map(Number); if (dist({ col, row }, e) <= 1 && (!best || cost < best.cost)) best = { col, row, cost }; }
-    if (!best) throw new Error('Non ci arrivi con il movimento che hai: avvicinati ancora.');
-    await moveCharacter(store, ch, r, best, best.cost);
-    const c2 = me(); if (!c2 || c2.room_id !== ch.room_id || dist(c2, e) > 1 || c2.hp <= 0) return; // un incontro, una trappola o un passaggio hanno interrotto il percorso
-    await acts[d.do]({ id: d.id });
-  }),
   chron: () => { const c = $('#chron'); const closed = c.classList.toggle('closed'); localStorage.setItem('dnd.chron', closed ? '0' : '1'); $('[data-act="chron"]').textContent = closed ? 'Cronaca ▸' : 'Cronaca ▾'; $('[data-act="chron"]').setAttribute('aria-expanded', String(!closed)); },
   'adv-reset': () => busy(async () => {
     if (!(await confirmBox('Cancellare tutte le stanze di questa avventura e ricominciare? I personaggi restano.'))) return;

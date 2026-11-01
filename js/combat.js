@@ -7,7 +7,7 @@ import { followLeader, spendAuto } from './companions.js';
 import { skillBonus, checkBonus } from './skills.js';
 import { mitigate, factorTxt, dmgLabel, maybeProc, applyStatus, cureStatus, statiOf, hasStato, statusMalus, STATI, tipoNome, COMUNI } from './status.js';
 import { monsterFromPreset } from './random.js';
-import { startCombat, endCombatIfDone, maybeStartCombat, turnGuard, checkWipe, isCoop, inCombat as inFight } from './combatflow.js';
+import { startCombat, endCombatIfDone, maybeStartCombat, turnGuard, checkWipe, isCoop, syncInit, scaleForParty, inCombat as inFight } from './combatflow.js';
 import { mod, prof, hexesFor, ITEMS, scrollItem, weaponCheck, spellCheck, CLASSES, maxMana, manaOf, spellCost, BESTIARY } from './rules.js';
 import { update, patchData, say, setCampaignState, remove } from './db.js';
 import { propBlocks } from './props.js';
@@ -435,7 +435,9 @@ async function springMimic(store, ch, ent) {
   say(store, ch.name, 'event', noticed ? `${best.name} nota che il forziere respira (Saggezza ${r.total}): è un mimic!` : `${ch.name} apre il forziere… ma si spalanca in una bocca piena di denti: è un mimic!`);
   const mim = store.entities.find(e => e.id === ent.id);
   if (!noticed) { try { await monsterAttack(store, mim, ch, null, { auto: true }); } catch { /* niente */ } }
-  await startCombat(store, ch.room_id, { force: true, first: noticed ? ch.id : null });
+  // il morso a sorpresa è già il prezzo dell'errore: il turno di chi ha aperto non si perde mai
+  if (inFight(store)) { await scaleForParty(store, ch.room_id); await syncInit(store); } // scontro in corso: il mimic si unisce, l'ordine dei turni non cambia
+  else await startCombat(store, ch.room_id, { force: true, first: ch.id });
 }
 
 export async function lootEntity(store, ch, ent) {

@@ -160,6 +160,31 @@ function doorMesh(ent, room) {
   if (!open) g.add(mesh(box(0.22, 0.26, 0.1), mat(0xd9b43f, { metalness: 0.6 }), 0.35, 0.75, 0.1), mesh(tor(0.08, 0.025, Math.PI), mat(0xd9b43f, { metalness: 0.6 }), 0.35, 0.88, 0.1));
   g.rotation.y = alongX ? 0 : Math.PI / 2; return g;
 }
+/** Luoghi della mappa del mondo: albero con i frutti, oasi, paese, ingresso di dungeon. */
+const FRUIT_COL = { melo: 0xd8352f, bacche: 0x4a5ad8, lunare: 0xf2eec0, brina: 0x6fd2c8, vita: 0xffd34d };
+function placeMesh(ent) {
+  const dd = ent.data || {}; const g = new THREE.Group(); const dim = dd.waiting;
+  if (dd.place === 'albero') {
+    const fc = FRUIT_COL[dd.frutto] || 0xd8352f;
+    add(g, mesh(cyl(0.16, 0.24, 1.2, 8), mat(0x6b4a2a), 0, 0.6), mesh(sph(0.95, 12, 9), mat(0x3f8a3a), 0, 1.75), mesh(sph(0.62, 10, 8), mat(0x4aa043), 0.5, 1.45), mesh(sph(0.55, 10, 8), mat(0x357a33), -0.48, 1.5));
+    for (let i = 0; i < 8; i++) { const a = i * 2.4; g.add(mesh(sph(0.13, 8, 6), mat(fc, { emissive: fc, emissiveIntensity: 0.35 }), Math.cos(a) * 0.82, 1.4 + (i % 3) * 0.32, Math.sin(a) * 0.82, false)); }
+    g.scale.setScalar(1.15);
+  } else if (dd.place === 'oasi') {
+    add(g, mesh(cyl(1.28, 1.34, 0.08, 24), mat(0xe0c98a), 0, 0.04), mesh(cyl(1.0, 1.0, 0.12, 24), mat(0x3d9ad1, { roughness: 0.2, metalness: 0.2 }), 0, 0.09, 0, false));
+    const palm = new THREE.Group(); palm.add(mesh(cyl(0.09, 0.14, 1.7, 8), mat(0x8a6a3a), 0, 0.85)); for (let i = 0; i < 6; i++) { const lf = mesh(cone(0.16, 1.0, 5), mat(0x3f9a3a), Math.cos(i * 1.05) * 0.38, 1.78, Math.sin(i * 1.05) * 0.38); lf.rotation.z = Math.cos(i * 1.05) * 1.1; lf.rotation.x = -Math.sin(i * 1.05) * 1.1; palm.add(lf); } palm.position.set(-0.55, 0, -0.35); palm.rotation.z = 0.12; g.add(palm);
+  } else if (dd.place === 'paese') {
+    const house = (x, z, w, h, wall, roof) => { const hg = new THREE.Group(); hg.add(mesh(box(w, h, w * 0.9), mat(wall), 0, h / 2), mesh(cone(w * 0.82, h * 0.7, 4), mat(roof), 0, h + h * 0.35)); hg.children[1].rotation.y = Math.PI / 4; hg.add(mesh(box(0.14, 0.2, 0.05), mat(0xffd34d, { emissive: 0xffc04d, emissiveIntensity: 0.9 }), w * 0.18, h * 0.55, w * 0.46, false)); hg.position.set(x, 0, z); return hg; };
+    add(g, house(-0.62, -0.1, 0.8, 0.6, 0xd9c7a0, 0xa23f2f), house(0.58, -0.25, 0.7, 0.55, 0xcfd6dc, 0x4a6a9a), house(0.05, 0.62, 0.9, 0.7, 0xe0c27a, 0x7a3a2a));
+    g.scale.setScalar(1.35);
+  } else if (dd.place === 'dungeon') {
+    const rock = mat(dim ? 0x4a4f55 : 0x57514a);
+    add(g, mesh(sph(1.15, 12, 8), rock, 0, 0.1), mesh(box(0.8, 0.95, 0.5), mat(0x0b0b0e), 0, 0.5, 0.88), mesh(tor(0.52, 0.12, Math.PI), mat(0x8a8378), 0, 0.98, 0.9));
+    for (let i = 0; i < 6; i++) { const a = i * 1.05 + 0.4; g.add(mesh(box(0.28, 0.5 + (i % 2) * 0.3, 0.28), rock, Math.cos(a) * 1.35, 0.3, Math.sin(a) * 1.35)); }
+    if (dim) g.add(mesh(box(1.0, 0.12, 0.1), mat(0x6a6a6a), 0, 0.55, 1.1)); else g.add(mesh(sph(0.1, 8, 6), mat(0xff8a2a, { emissive: 0xff7a1a, emissiveIntensity: 1 }), 0.7, 0.9, 1.05, false));
+  } else return null;
+  return g;
+}
+
 function trapMesh(ent) {
   const g = new THREE.Group(); const off = ent.data?.armed === false;
   g.add(mesh(cyl(0.6, 0.6, 0.06, 6), mat(off ? 0x6a6a6a : 0x9c2f2f), 0, 0.03, 0, false));
@@ -168,6 +193,18 @@ function trapMesh(ent) {
 }
 
 /* ---------- etichette ---------- */
+/** Evidenza del proprio personaggio: alone dorato che pulsa a terra, fascio di luce e freccia che oscilla. Restituisce gli oggetti da animare. */
+function meMarker(g) {
+  const gold = 0xffd34d;
+  const halo = new THREE.Mesh(new THREE.RingGeometry(1.0, 1.3, 40), new THREE.MeshBasicMaterial({ color: gold, side: THREE.DoubleSide, transparent: true, opacity: 0.85, depthWrite: false }));
+  halo.rotation.x = -Math.PI / 2; halo.position.y = 0.24; g.add(halo);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.62, 7, 20, 1, true), new THREE.MeshBasicMaterial({ color: gold, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+  beam.position.y = 3.6; g.add(beam);
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.85, 4), new THREE.MeshBasicMaterial({ color: gold, depthTest: false, transparent: true, opacity: 0.95 }));
+  arrow.rotation.x = Math.PI; arrow.position.y = 4.1; arrow.renderOrder = 9; g.add(arrow);
+  return { halo, beam, arrow };
+}
+
 function labelSprite(text, hpRatio = null) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64; const x = c.getContext('2d');
   x.font = '600 26px system-ui, sans-serif'; x.textAlign = 'center'; x.lineJoin = 'round'; x.lineWidth = 6; x.strokeStyle = '#0b1115'; x.strokeText(text, 128, 28); x.fillStyle = '#fff'; x.fillText(text, 128, 28);
@@ -248,11 +285,11 @@ export function createBoard3D(container, h = {}) {
       if (!vis(e.col, e.row)) return; const dd = e.data || {};
       const ghost = master && e.hidden;
       out.push({ id: e.id, kind: 'entity', col: e.col, row: e.row, ghost, sel: d.sel?.kind === 'entity' && d.sel.id === e.id,
-        sig: [e.kind, e.name, dd.dead, dd.looted, dd.locked, dd.armed, dd.hp, dd.maxHp, ghost, dd.preset].join('|'),
+        sig: [e.kind, e.name, dd.dead, dd.looted, dd.locked, dd.armed, dd.hp, dd.maxHp, ghost, dd.preset, dd.place, dd.frutto, dd.waiting].join('|'),
         build: () => {
           const g = new THREE.Group(); let label = null; let top = 1.2;
           if (e.kind === 'monster') { const b = monsterBody(e); g.add(mesh(cyl(0.72, 0.78, 0.14, 24), mat(0x3a1713), 0, 0.07), b); b.position.y = 0.0; if (dd.dead) { b.rotation.z = Math.PI / 2.2; b.position.set(0, 0.35, 0); b.children.forEach(ch => ch.traverse(n => { if (n.isMesh) n.material = mat(0x6b6b66); })); } else { label = labelSprite(e.name.replace(/\s+\d+$/, '') + (/\s(\d+)$/.test(e.name) ? ' ' + e.name.match(/\s(\d+)$/)[1] : ''), dd.hp / (dd.maxHp || 1)); top = 2.2; } }
-          else if (e.kind === 'treasure') g.add(chestMesh(e)); else if (e.kind === 'npc') { g.add(mesh(cyl(0.7, 0.75, 0.14, 24), mat(0x5a3d1e), 0, 0.07), mesh(cyl(0.3, 0.42, 1.1, 16), mat(0xc0862a), 0, 0.68)); } else if (e.kind === 'door') { g.add(doorMesh(e, room)); } else g.add(trapMesh(e));
+          else if (e.kind === 'treasure') g.add(chestMesh(e)); else if (e.kind === 'npc') { g.add(mesh(cyl(0.7, 0.75, 0.14, 24), mat(0x5a3d1e), 0, 0.07), mesh(cyl(0.3, 0.42, 1.1, 16), mat(0xc0862a), 0, 0.68)); } else if (e.kind === 'door') { const pm = dd.place ? placeMesh(e) : null; if (pm) { g.add(pm); label = labelSprite(e.name); top = 2.7; } else g.add(doorMesh(e, room)); } else g.add(trapMesh(e));
           if (label) { label.position.y = top + 0.5; g.add(label); }
           if (ghost) g.traverse(n => { if (n.isMesh) { n.material = n.material.clone(); n.material.transparent = true; n.material.opacity = 0.45; } });
           return g;
@@ -261,7 +298,7 @@ export function createBoard3D(container, h = {}) {
     (d.characters || []).forEach(c => {
       if (!vis(c.col, c.row)) return; const me = d.meId === c.id;
       out.push({ id: c.id, kind: 'pc', col: c.col, row: c.row, me, sel: d.sel?.kind === 'char' && d.sel.id === c.id, sig: ['pc', c.name, c.hp, c.max_hp, c.data?.classId, c.data?.raceId, me].join('|'),
-        build: () => { const g = new THREE.Group(); g.add(mesh(cyl(0.74, 0.8, 0.14, 24), mat(me ? 0xc0862a : 0x277a73), 0, 0.07)); const pc = makePC(c); g.add(pc); if (c.hp <= 0) { pc.rotation.z = Math.PI / 2.2; pc.position.set(0, 0.4, 0); } const l = labelSprite(c.name, c.hp / (c.max_hp || 1)); l.position.y = 2.7; g.add(l); return g; } });
+        build: () => { const g = new THREE.Group(); g.add(mesh(cyl(0.74, 0.8, 0.14, 24), mat(me ? 0xc0862a : 0x277a73), 0, 0.07)); const pc = makePC(c); g.add(pc); if (me && c.hp > 0) g.userData.fx = meMarker(g); if (c.hp <= 0) { pc.rotation.z = Math.PI / 2.2; pc.position.set(0, 0.4, 0); } const l = labelSprite(c.name, c.hp / (c.max_hp || 1)); l.position.y = 2.7; g.add(l); return g; } });
     });
     return out;
   }
@@ -297,6 +334,8 @@ export function createBoard3D(container, h = {}) {
     controls.target.set(cx, 0, cz); camera.position.set(cx + dist * 0.05, dist * 0.82, cz + dist * 0.62); controls.update();
   }
   function zoom(f) { const off = camera.position.clone().sub(controls.target); const len = THREE.MathUtils.clamp(off.length() * f, controls.minDistance, controls.maxDistance); off.setLength(len); camera.position.copy(controls.target).add(off); controls.update(); }
+  /** Porta la vista sulla casella (e, se la camera è lontana, la avvicina). */
+  function focus(col, row) { const [x, z] = hexPos(col, row); const nt = new THREE.Vector3(x, 0, z); const delta = nt.clone().sub(controls.target); controls.target.add(delta); camera.position.add(delta); const off = camera.position.clone().sub(controls.target); if (off.length() > 24) { off.setLength(24); camera.position.copy(controls.target).add(off); } controls.update(); }
   function panToXY(x, y) { const nt = new THREE.Vector3(x / SIZE_2D, 0, y / SIZE_2D); const delta = nt.clone().sub(controls.target); controls.target.add(delta); camera.position.add(delta); controls.update(); }
 
   /* picking */
@@ -318,11 +357,12 @@ export function createBoard3D(container, h = {}) {
   renderer.setAnimationLoop(() => {
     if (document.hidden || !container.offsetParent) return;
     const dt = Math.min(clock.getDelta(), 0.1), t = clock.elapsedTime;
-    for (const tk of tokens.values()) { const k = 1 - Math.exp(-dt * 12); tk.group.position.lerp(tk.target, k); if (tk.sel) tk.group.position.y = tk.target.y + Math.abs(Math.sin(t * 3)) * 0.12; }
+    for (const tk of tokens.values()) { const k = 1 - Math.exp(-dt * 12); tk.group.position.lerp(tk.target, k); if (tk.sel) tk.group.position.y = tk.target.y + Math.abs(Math.sin(t * 3)) * 0.12;
+      const fx = tk.group.userData.fx; if (fx) { const p = 0.5 + 0.5 * Math.sin(t * 3.2); fx.halo.scale.setScalar(1 + p * 0.35); fx.halo.material.opacity = 0.9 - p * 0.55; fx.beam.material.opacity = 0.14 + p * 0.12; fx.arrow.position.y = 4.1 + Math.sin(t * 4) * 0.25; } }
     flames.forEach((f, i) => { const s = 1 + Math.sin(t * 9 + i * 2) * 0.06; f.scale.set(s, 1 + Math.sin(t * 11 + i) * 0.08, s); });
     lamps.forEach((l, i) => { l.intensity = l.userData.base * (0.92 + Math.sin(t * 8 + i * 3) * 0.06 + Math.sin(t * 13 + i) * 0.03); });
     controls.update(); renderer.render(scene, camera);
   });
 
-  return { render, fit, zoom, panToXY, dispose() { renderer.setAnimationLoop(null); renderer.dispose(); renderer.domElement.remove(); }, canvas: renderer.domElement };
+  return { render, fit, zoom, panToXY, focus, dispose() { renderer.setAnimationLoop(null); renderer.dispose(); renderer.domElement.remove(); }, canvas: renderer.domElement };
 }
