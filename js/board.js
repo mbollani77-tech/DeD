@@ -48,10 +48,11 @@ export function createBoard(svg, h = {}) {
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
   const wrap = svg.parentElement;
   const mini = document.createElement('div'); mini.className = 'minimap'; mini.innerHTML = '<svg aria-label="Minimappa" preserveAspectRatio="xMidYMid meet"></svg>'; wrap.appendChild(mini);
-  const msvg = mini.querySelector('svg'); let mbox = null;
+  const msvg = mini.querySelector('svg'); let mbox = null; let miniOn = localStorage.getItem('dnd.mini') === '1';
 
   const apply = () => {
     svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`);
+    mini.hidden = !miniOn; // la minimappa si attiva a richiesta (pulsante)
     const v = msvg.querySelector('#mm-view'); if (v) { v.setAttribute('x', view.x); v.setAttribute('y', view.y); v.setAttribute('width', view.w); v.setAttribute('height', view.h); }
   };
   const fit = () => { if (d) { view = fullBox(d.room); apply(); } };
@@ -71,7 +72,6 @@ export function createBoard(svg, h = {}) {
     let inner = th.svg;
     if (d.visible) inner += `<g fill="#0e1418">${[...Array(room.rows * room.cols).keys()].map(i => { const c = i % room.cols, r = Math.floor(i / room.cols); if (d.visible.has(key(c, r))) return ''; const [cx, cy] = center(c, r, SIZE); return `<polygon points="${hexPts(cx, cy, SIZE + 0.5)}"/>`; }).join('')}</g>`;
     msvg.innerHTML = inner + `<rect id="mm-view" fill="#ffffff22" stroke="#fff" stroke-width="7" pointer-events="none"/>`;
-    mini.hidden = false;
   }
 
   function render(data, opts = {}) {
@@ -183,6 +183,8 @@ export function createBoard(svg, h = {}) {
 
   return {
     render, fit, zoom, panToXY,
+    get miniOn() { return miniOn; },
+    setMini(on) { miniOn = !!on; localStorage.setItem('dnd.mini', miniOn ? '1' : '0'); mini.hidden = !miniOn; return miniOn; },
     paintCell(c, r, t) {
       const p = svg.querySelector(`polygon.hx[data-c="${c}"][data-r="${r}"]`); if (!p) return;
       p.setAttribute('fill', t === 'w' ? theme.wall : t === 'a' ? theme.water : t === 'd' ? theme.diff : theme.floor[Math.floor(hash(c, r, 0) * 3)]);

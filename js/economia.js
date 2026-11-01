@@ -73,10 +73,12 @@ export function noSlot(o, bonus = false) {
 /** Combina vantaggio/svantaggio: se si annullano, tiro normale. */
 export const mixAdv = (a, b) => (a && b && a !== b ? null : a || b || null);
 
-/** Vantaggio/svantaggio da Aiuto (chi attacca) e Schivare (chi difende). Consuma l'Aiuto. */
-export async function advFor(store, att, def, adv) {
+/** Vantaggio/svantaggio da Aiuto (chi attacca) e Schivare (chi difende), senza consumare nulla. */
+export function advPeek(att, def, adv) {
   let a = adv || null;
-  if (getEco(att).aiuto) { a = mixAdv(a, 'adv'); await saveEco(store, att, { aiuto: 0 }); }
+  if (getEco(att).aiuto) a = mixAdv(a, 'adv');
   if (def && getEco(def).schiva) a = mixAdv(a, 'dis');
   return a;
 }
+/** Consuma l'Aiuto ricevuto (dopo che il tiro è stato fatto davvero). */
+export const advConsume = async (store, att) => { if (getEco(att).aiuto) await saveEco(store, att, { aiuto: 0 }); };

@@ -51,7 +51,7 @@ export function rollD20(bonus = 0, adv = null) {
   const rolls = r.parts[0].rolls.join(', ');
   const b = bonus ? ` ${bonus > 0 ? '+' : '-'} ${Math.abs(bonus)}` : '';
   const tag = adv === 'adv' ? ' (vantaggio)' : adv === 'dis' ? ' (svantaggio)' : '';
-  return { nat, total: nat + bonus, crit: nat === 20, fumble: nat === 1, text: `d20 [${rolls}]${b} = ${nat + bonus}${tag}` };
+  return { nat, rolls: r.parts[0].rolls, total: nat + bonus, crit: nat === 20, fumble: nat === 1, text: `d20 [${rolls}]${b} = ${nat + bonus}${tag}` };
 }
 
 /** Raddoppia i dadi (non i bonus) per i colpi critici. */

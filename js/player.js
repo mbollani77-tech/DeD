@@ -6,6 +6,7 @@ import { mountDiceTray, roll, rollDie } from './dice.js';
 import { STATS, STAT_NAME, RACES, CLASSES, WEAPONS, SPELLS, mod, prof, fmtMod, hexesFor } from './rules.js';
 import { weaponAttack, castSpell, opportunityAttack, doAction, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters, markVisited } from './combat.js';
 import { getEco, weaponSlot, spellSlot, isRogue } from './economia.js';
+import { mountDicebar } from './dicebar.js';
 import { key, dist, neighbors, inBounds, reachable, hexesWithin, los } from './hex.js';
 
 const fatal = msg => { document.body.innerHTML = `<div class="fatal"><h2>Non riesco ad aprire la campagna</h2><p>${esc(msg)}</p><a class="btn primary" href="index.html">Torna all'inizio</a></div>`; };
@@ -121,26 +122,28 @@ function renderInit(ch) {
 function renderBoard(ch, r) {
   const empty = $('#empty'); empty.hidden = !!r; board.show(!!r);
   const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
+  $('[data-act="mini"]')?.classList.toggle('on', board.miniOn);
   if (!r) { empty.innerHTML = '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
   board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, visible: visibleSet(r) });
 }
 function renderActionbar(ch) {
   const el = $('#actionbar'); el.hidden = false;
   const m = S.mode; const e = getEco(ch);
-  const b = (cls, on, attrs, label, off = false) => `<button class="btn ${cls} ${on ? 'on' : ''}" data-act="mode" ${attrs} ${off ? 'disabled' : ''}>${label}</button>`;
-  const act = (w, label, off, title = '') => `<button class="btn" data-act="act" data-w="${w}" ${off ? 'disabled' : ''} title="${esc(title)}">${label}</button>`;
-  const slotTag = s => ({ extra: ' (attacco extra)', bonus: ' (bonus)' }[s] || '');
-  const eco = `<span class="chip ${e.az ? 'red' : ''}" title="${esc(e.az || 'libera')}">Azione ${e.az ? 'usata' : 'libera'}${e.atk > 0 ? ` +${e.atk} att.` : ''}</span><span class="chip ${e.bo ? 'red' : ''}" title="${esc(e.bo || 'libera')}">Bonus ${e.bo ? 'usato' : 'libero'}</span><span class="chip ${e.re ? 'red' : ''}" title="${esc(e.re || 'libera')}">Reazione ${e.re ? 'usata' : 'libera'}</span>${e.schiva ? '<span class="chip">Schivata</span>' : ''}${e.disimp ? '<span class="chip">Disimpegno</span>' : ''}${e.aiuto ? '<span class="chip gold">Aiutato</span>' : ''}`;
-  el.innerHTML = eco + b('', m.t === 'move', 'data-t="move"', `Muovi (${ch.move_left}/${hexesFor(ch.speed)})`)
-    + (ch.data.armi || []).map((w, i) => { const sl = weaponSlot(ch, w, i); return b('weapon', m.t === 'weapon' && m.i === i, `data-t="weapon" data-i="${i}"`, `${esc(w.nome)} ${esc(w.dado)}${slotTag(sl)}`, !sl); }).join('')
-    + (ch.data.magie || []).map((s, i) => { const sl = spellSlot(ch, s); return b('spell', m.t === 'spell' && m.i === i, `data-t="spell" data-i="${i}"`, esc(s.nome) + slotTag(sl), !sl); }).join('')
-    + act('scatto', 'Scatta', e.az, 'Azione: raddoppia il movimento del round')
-    + act('schiva', 'Schiva', e.az, 'Azione: svantaggio a chi ti attacca, vantaggio ai tiri salvezza di Destrezza')
-    + act('disimp', 'Disimpegnati', e.az, 'Azione: ti muovi senza subire attacchi di opportunità')
-    + act('aiuto', 'Aiuta', e.az, 'Azione: il prossimo attacco di un compagno ha vantaggio')
-    + (isRogue(ch) ? act('scaltra-scatto', 'Scaltra: scatta', e.bo, 'Azione bonus del Ladro') + act('scaltra-disimp', 'Scaltra: disimpegnati', e.bo, 'Azione bonus del Ladro') : '')
-    + b('', m.t === 'reaz', 'data-t="reaz"', 'Reazione: attacco di opportunità', !!e.re)
-    + `<select data-pick="adv" aria-label="Vantaggio o svantaggio"><option value="" ${!S.adv ? 'selected' : ''}>Tiro normale</option><option value="adv" ${S.adv === 'adv' ? 'selected' : ''}>Vantaggio</option><option value="dis" ${S.adv === 'dis' ? 'selected' : ''}>Svantaggio</option></select>`;
+  const slotTag = s => ({ extra: 'attacco extra', bonus: 'azione bonus' }[s] || '');
+  const mode = (cls, on, attrs, label, sub = '', off = false) => `<button class="btn ${cls} ${on ? 'on' : ''}" data-act="mode" ${attrs} ${off ? 'disabled' : ''}>${label}${sub ? `<small>${sub}</small>` : ''}</button>`;
+  const act = (w, label, off, title) => `<button class="btn" data-act="act" data-w="${w}" ${off ? 'disabled' : ''} title="${esc(title)}">${label}</button>`;
+  const pip = (name, used, what) => `<div class="pip ${used ? 'used' : ''}" title="${esc(what || 'libera')}"><b>${name}</b>${used ? 'usata' : 'libera'}</div>`;
+  const armi = (ch.data.armi || []).map((w, i) => { const sl = weaponSlot(ch, w, i); return mode('weapon', m.t === 'weapon' && m.i === i, `data-t="weapon" data-i="${i}"`, esc(w.nome), `${esc(w.dado)}${slotTag(sl) ? ' · ' + slotTag(sl) : ''}`, !sl); }).join('');
+  const magie = (ch.data.magie || []).map((s, i) => { const sl = spellSlot(ch, s); return mode('spell', m.t === 'spell' && m.i === i, `data-t="spell" data-i="${i}"`, esc(s.nome), `${s.livello ? 'liv. ' + s.livello : 'trucchetto'}${sl === 'bonus' ? ' · azione bonus' : ''}`, !sl); }).join('');
+  const stati = [e.atk > 0 ? `<span class="chip gold">+${e.atk} attacchi</span>` : '', e.schiva ? '<span class="chip">Schivata</span>' : '', e.disimp ? '<span class="chip">Disimpegno</span>' : '', e.aiuto ? '<span class="chip gold">Aiutato</span>' : ''].join('');
+  el.innerHTML = `<div class="grp"><h4>Round</h4><div class="pips">${pip('Azione', e.az, e.az)}${pip('Bonus', e.bo, e.bo)}${pip('Reaz.', e.re, e.re)}</div>${stati ? `<div class="states">${stati}</div>` : ''}</div>`
+    + `<div class="grp"><h4>Movimento</h4>${mode('', m.t === 'move', 'data-t="move"', 'Muovi', `${ch.move_left} / ${hexesFor(ch.speed)} esagoni`)}</div>`
+    + (armi ? `<div class="grp"><h4>Armi</h4>${armi}</div>` : '')
+    + (magie ? `<div class="grp"><h4>Magie</h4>${magie}</div>` : '')
+    + `<div class="grp"><h4>Azioni</h4><div class="two">${act('scatto', 'Scatta', e.az, 'Azione: raddoppia il movimento del round')}${act('schiva', 'Schiva', e.az, 'Azione: svantaggio a chi ti attacca, vantaggio ai tiri salvezza di Destrezza')}${act('disimp', 'Disimpegnati', e.az, 'Azione: ti muovi senza subire attacchi di opportunità')}${act('aiuto', 'Aiuta', e.az, 'Azione: il prossimo attacco di un compagno ha vantaggio')}</div></div>`
+    + (isRogue(ch) ? `<div class="grp"><h4>Azione bonus</h4><div class="two">${act('scaltra-scatto', 'Scatta', e.bo, 'Azione scaltra del Ladro')}${act('scaltra-disimp', 'Disimpegnati', e.bo, 'Azione scaltra del Ladro')}</div></div>` : '')
+    + `<div class="grp"><h4>Reazione</h4>${mode('', m.t === 'reaz', 'data-t="reaz"', 'Attacco di opportunità', '', !!e.re)}</div>`
+    + `<div class="grp"><h4>Tiro</h4><select data-pick="adv" aria-label="Vantaggio o svantaggio"><option value="" ${!S.adv ? 'selected' : ''}>Tiro normale</option><option value="adv" ${S.adv === 'adv' ? 'selected' : ''}>Vantaggio</option><option value="dis" ${S.adv === 'dis' ? 'selected' : ''}>Svantaggio</option></select></div>`;
 }
 function renderStatus(ch, r) {
   const a = currentAction(ch); let t;
@@ -161,13 +164,14 @@ function renderPanel(ch) {
 const meter = (hp, max) => `<div class="meter ${hp / max < 0.34 ? 'low' : ''}" role="img" aria-label="${hp} punti ferita su ${max}"><i style="width:${Math.max(0, Math.min(100, (hp / max) * 100))}%"></i></div>`;
 function tabScheda(ch) {
   const cast = ch.data.cast; const pb = prof(ch.level);
-  return `<div class="stack"><div><h2>${esc(ch.name)}</h2><p class="muted">${esc(ch.race)} ${esc(ch.class)} di livello ${ch.level}${ch.player ? `, giocato da ${esc(ch.player)}` : ''}</p></div>
-  <div><div class="btnrow" style="justify-content:space-between"><strong>Punti ferita</strong><span>${ch.hp} / ${ch.max_hp}</span></div>${meter(ch.hp, ch.max_hp)}</div>
-  <div class="statgrid"><div class="statbox"><b>${ch.ac}</b><span>Classe armatura</span></div><div class="statbox"><b>${ch.speed} ft</b><span>${hexesFor(ch.speed)} esagoni per round</span></div><div class="statbox"><b>${fmtMod(pb)}</b><span>Competenza</span></div></div>
-  <div class="statgrid">${STATS.map(([k, l]) => `<div class="statbox"><b>${fmtMod(mod(ch.stats[k]))}</b><span>${l} ${ch.stats[k]}</span></div>`).join('')}</div>
-  <p class="muted">Iniziativa ${fmtMod(mod(ch.stats.des))}${cast ? `, caratteristica magica ${STAT_NAME[cast]}, CD incantesimi ${8 + pb + mod(ch.stats[cast])}` : ''}.</p>
+  const ab = ([k, l]) => { const mm = mod(ch.stats[k]); return `<div class="ab" title="${l} ${ch.stats[k]}"><span>${l.slice(0, 3).toUpperCase()}</span><b class="${mm < 0 ? 'neg' : ''}">${fmtMod(mm)}</b><small>${ch.stats[k]}</small></div>`; };
+  return `<div class="sheet"><div class="sheet-head"><h2>${esc(ch.name)}</h2><p class="muted">${esc(ch.race)} ${esc(ch.class)} · livello ${ch.level}${ch.player ? ` · ${esc(ch.player)}` : ''}</p></div>
+  <div class="hp"><span>PF</span>${meter(ch.hp, ch.max_hp)}<em>${ch.hp} / ${ch.max_hp}</em></div>
+  <div class="vitals"><div class="vital"><b>${ch.ac}</b><span>CA</span></div><div class="vital"><b>${ch.speed}<small>ft</small></b><span>${hexesFor(ch.speed)} esagoni</span></div><div class="vital"><b>${fmtMod(pb)}</b><span>Competenza</span></div><div class="vital"><b>${fmtMod(mod(ch.stats.des))}</b><span>Iniziativa</span></div></div>
+  <div class="abilities">${STATS.map(ab).join('')}</div>
+  ${cast ? `<p class="castline">Magia: ${STAT_NAME[cast]} · CD ${8 + pb + mod(ch.stats[cast])}</p>` : ''}
   ${ch.data.note ? `<div class="card"><strong>Note</strong><p>${esc(ch.data.note)}</p></div>` : ''}
-  <div class="btnrow"><button class="btn" data-act="char-edit">Modifica scheda</button></div></div>`;
+  <div class="btnrow"><button class="btn sm" data-act="char-edit">Modifica scheda</button></div></div>`;
 }
 function tabArmi(ch) {
   const pb = prof(ch.level); const cm = mod(ch.stats[ch.data.cast || 'int']);
@@ -303,6 +307,7 @@ const acts = {
     }
     await doAction(store, ch, d.w, ally);
   }),
+  mini: () => { board.toggleMini(); render(); },
   'zoom-in': () => board.zoom(0.8), 'zoom-out': () => board.zoom(1.25), fit: () => board.fit(),
   view: async () => { await board.set(board.mode === '2d' ? '3d' : '2d'); render(); },
   dmap: () => openDungeonMap({ store, role: 'player', currentRoomId: me()?.room_id }),
@@ -335,8 +340,9 @@ document.addEventListener('click', async e => {
   try { await fn(b.dataset); } catch (x) { err(x); }
 });
 document.addEventListener('change', e => { if (e.target.dataset?.pick === 'adv') S.adv = e.target.value; });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { S.mode = { t: 'move' }; render(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { dicebar.cancel(); S.mode = { t: 'move' }; render(); } });
 
 if (localStorage.getItem('dnd.view') === '3d') board.set('3d').then(render);
+const dicebar = mountDicebar($('#dicebar'), { stage: $('.board-wrap') });
 mountDiceTray($('#dice-tray'), { who: () => me()?.name || 'Giocatore', say: (kind, text) => say(store, me()?.name || 'Giocatore', kind === 'secret' ? 'roll' : kind, text) });
 render();

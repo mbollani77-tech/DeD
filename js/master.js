@@ -8,6 +8,7 @@ import { STATS, STAT_NAME, BESTIARY, TRAPS, mod, hexesFor, fmtMod, crLabel } fro
 import { generateRoom, randomProps, randomMonster, randomTreasure, randomTrap, randomQuest, monsterFromPreset, trapFromPreset, itemsToText, parseItems } from './random.js';
 import { monsterAttack, monsterAutoTurn, damageEntity, damageChar, healChar, liveMonsters, doAction } from './combat.js';
 import { getEco, resetEco } from './economia.js';
+import { mountDicebar } from './dicebar.js';
 import { key, dist, neighbors, inBounds } from './hex.js';
 
 /* ---------- sessione ---------- */
@@ -89,6 +90,7 @@ function renderInit() {
 function renderBoard(r) {
   $('#empty').hidden = !!r; board.show(!!r);
   const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
+  $('[data-act="mini"]')?.classList.toggle('on', board.miniOn);
   if (!r) { $('#empty').innerHTML = '<div><h2>Il tavolo è vuoto</h2><p>Crea la tua prima stanza, oppure fai generare un dungeon dalla scheda Stanze.</p></div>'; return; }
   board.render({ room: r, role: 'master', entities: entsIn(r), characters: store.characters.filter(c => c.room_id === r.id), sel: S.sel, paint: S.tool.t === 'paint', showStart: true });
 }
@@ -392,6 +394,7 @@ const acts = {
   leave: () => { localStorage.removeItem('dnd.master'); location.href = 'index.html'; },
   tab: d => { S.tab = d.t; render(); },
   tool: async d => { if (d.t === 'paint' && board.mode === '3d') await board.set('2d'); S.tool = { t: d.t, v: d.v }; S.moving = false; render(); },
+  mini: () => { board.toggleMini(); render(); },
   'zoom-in': () => board.zoom(0.8), 'zoom-out': () => board.zoom(1.25), fit: () => board.fit(),
   view: async () => { await board.set(board.mode === '2d' ? '3d' : '2d'); if (board.mode === '3d' && ['paint'].includes(S.tool.t)) { S.tool = { t: 'select' }; toast('In 3D si guarda e si piazza; per disegnare i muri torna in 2D.'); } render(); },
   dmap: () => openDungeonMap({ store, role: 'master', currentRoomId: room()?.id, onOpen: id => { S.roomId = id; S.sel = null; render(); } }),
@@ -501,9 +504,10 @@ document.addEventListener('click', async e => {
 });
 document.addEventListener('change', e => { const p = e.target.dataset?.pick; if (p) S.pick[p] = e.target.value; });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { S.tool = { t: 'select' }; S.moving = false; S.sel = null; render(); }
+  if (e.key === 'Escape' && !document.querySelector('dialog[open]')) { dicebar.cancel(); S.tool = { t: 'select' }; S.moving = false; S.sel = null; render(); }
 });
 
 if (localStorage.getItem('dnd.view') === '3d') board.set('3d').then(render);
+const dicebar = mountDicebar($('#dicebar'), { stage: $('.board-wrap') });
 mountDiceTray($('#dice-tray'), { who: () => 'Master', say: (kind, text) => say(store, 'Master', kind, text), canSecret: true });
 render();

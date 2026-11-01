@@ -180,3 +180,88 @@ button.row .muted { grid-column: 1; font-size: .88rem; } button.row .chip { grid
 .dm svg { display: block; }
 .dm-card.click { cursor: pointer; } .dm-card.click:hover rect:first-child { stroke: #fff; }
 @media (max-width: 920px) { .minimap { width: 30%; max-width: 128px; } }
+
+/* ============ PAGINA GIOCATORE: pannello azioni a sinistra e scheda compatta ============ */
+.stage-row { display: flex; flex: 1; min-height: 0; }
+.stage-row .board-wrap { flex: 1; min-width: 0; }
+.actionpanel { width: 208px; flex: none; overflow-y: auto; background: var(--board-2); padding: .6rem .55rem; display: flex; flex-direction: column; gap: .7rem; border-right: 1px solid #ffffff18; }
+.actionpanel .grp { display: flex; flex-direction: column; gap: .3rem; }
+.actionpanel h4 { margin: 0; font: 700 .72rem/1 var(--f-body); letter-spacing: .09em; text-transform: uppercase; color: #8fa3ad; }
+.actionpanel .btn { background: #ffffff0f; border: 1px solid #ffffff22; color: #e8efec; padding: .38rem .6rem; font-size: .92rem; text-align: left; border-radius: 8px; line-height: 1.2; }
+.actionpanel .btn:hover:not(:disabled) { border-color: #9fd6cf; background: #ffffff1a; }
+.actionpanel .btn.on { background: #e8efec; color: var(--ink); border-color: #e8efec; }
+.actionpanel .btn.weapon { border-left: 3px solid #e08b84; } .actionpanel .btn.spell { border-left: 3px solid #b6a5e3; }
+.actionpanel .btn small { display: block; font-weight: 400; font-size: .75rem; opacity: .75; }
+.actionpanel .btn:disabled { opacity: .35; }
+.actionpanel .two { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; }
+.actionpanel .two .btn { padding: .36rem .45rem; font-size: .86rem; text-align: center; }
+.actionpanel select { width: 100%; background: #ffffff0f; border: 1px solid #ffffff22; color: #e8efec; border-radius: 8px; padding: .3rem .4rem; }
+.actionpanel select option { color: var(--ink); }
+.pips { display: grid; grid-template-columns: repeat(3, 1fr); gap: .3rem; }
+.pip { border-radius: 8px; padding: .3rem .2rem; text-align: center; background: #5fd4a622; border: 1px solid #5fd4a655; color: #bff2dc; font-size: .72rem; font-weight: 700; line-height: 1.15; }
+.pip b { display: block; font-size: .8rem; }
+.pip.used { background: #ae3f3a2b; border-color: #ae3f3a77; color: #f3b8b3; }
+.states { display: flex; flex-wrap: wrap; gap: .25rem; } .states .chip { font-size: .72rem; }
+@media (max-width: 920px) {
+  .stage-row { flex-direction: column; }
+  .stage-row .board-wrap { min-height: 44dvh; }
+  .actionpanel { order: 2; width: auto; flex-direction: row; overflow-x: auto; overflow-y: hidden; border-right: 0; border-top: 1px solid #ffffff18; align-items: flex-start; }
+  .actionpanel .grp { flex: none; min-width: 150px; } .actionpanel .two { min-width: 190px; }
+  .stage { height: auto; }
+}
+
+/* scheda personaggio compatta */
+.sheet { display: flex; flex-direction: column; gap: .65rem; }
+.sheet-head h2 { font-size: 1.3rem; margin: 0; line-height: 1.1; }
+.sheet-head p { margin: .1rem 0 0; font-size: .86rem; }
+.hp { display: grid; grid-template-columns: auto 1fr auto; gap: .5rem; align-items: center; font-size: .82rem; font-weight: 700; color: var(--ink-2); }
+.hp .meter { height: 8px; } .hp em { font-style: normal; color: var(--ink); }
+.vitals { display: grid; grid-template-columns: repeat(4, 1fr); gap: .35rem; }
+.vital { background: linear-gradient(180deg, #fff, #f1f6f4); border: 1px solid var(--line); border-radius: 10px; padding: .3rem .2rem .25rem; text-align: center; box-shadow: 0 1px 0 #ffffffcc inset; }
+.vital b { display: block; font-size: 1.1rem; line-height: 1.1; color: var(--teal-d); } .vital b small { font-size: .65rem; font-weight: 600; color: var(--muted); margin-left: 1px; }
+.vital span { font-size: .66rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.abilities { display: grid; grid-template-columns: repeat(6, 1fr); gap: .3rem; }
+.ab { background: #fff; border: 1px solid var(--line); border-top: 3px solid var(--teal); border-radius: 8px; padding: .2rem 0 .25rem; text-align: center; line-height: 1.05; }
+.ab span { display: block; font-size: .62rem; font-weight: 700; letter-spacing: .06em; color: var(--muted); }
+.ab b { display: block; font-size: 1.05rem; margin-top: .1rem; } .ab b.neg { color: var(--madder); }
+.ab small { display: inline-block; margin-top: .15rem; font-size: .68rem; color: var(--ink-2); background: var(--mist); border-radius: 99px; padding: 0 .35rem; }
+.sheet .castline { font-size: .82rem; color: var(--muted); margin: 0; }
+
+/* ============ BARRA DEI DADI sotto la mappa ============ */
+.dicebar { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; padding: .5rem .8rem; background: #17222a; border-top: 1px solid #ffffff18; color: #e8efec; }
+.db-info { flex: 1 1 200px; min-width: 0; } .db-prompt { font-weight: 700; line-height: 1.2; } .db-sub { font-size: .8rem; color: #8fa3ad; margin-top: .1rem; }
+.dicebar.active { background: #1c2c33; box-shadow: 0 -2px 0 var(--ochre) inset; } .dicebar.active .db-prompt { color: #f4d58d; }
+.db-dice { display: flex; gap: .3rem; }
+.die3 { width: 46px; height: 48px; padding: 0; background: none; border: 0; cursor: pointer; border-radius: 10px; filter: grayscale(1); opacity: .3; transition: opacity .2s, transform .15s; }
+.die3 svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.die3 svg polygon, .die3 svg rect, .die3 svg circle { fill: #2f414c; stroke: #8fa3ad; stroke-width: 1.6; stroke-linejoin: round; }
+.die3 svg .f { fill: none; stroke: #8fa3ad; stroke-width: 1; opacity: .6; }
+.die3 svg text { fill: #e8efec; font: 700 13px var(--f-body); text-anchor: middle; }
+.die3:disabled { cursor: not-allowed; }
+.die3.need { filter: none; opacity: 1; animation: dpulse 1.1s ease-in-out infinite; }
+.die3.need svg polygon, .die3.need svg rect, .die3.need svg circle { fill: #7a5114; stroke: #f4d58d; stroke-width: 2; }
+.die3.need svg .f { stroke: #f4d58d; opacity: .8; }
+.die3.need:hover { transform: translateY(-3px) scale(1.06); }
+.die3.rolling { animation: dshake .12s linear infinite; }
+@keyframes dpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes dshake { 0% { transform: rotate(-12deg) translateY(-2px); } 50% { transform: rotate(12deg) translateY(2px); } 100% { transform: rotate(-12deg) translateY(-2px); } }
+.db-result { min-width: 118px; max-width: 220px; text-align: center; background: #ffffff0d; border-radius: 10px; padding: .2rem .6rem; }
+.db-result b { display: block; font: 700 1.6rem/1.1 var(--f-body); } .db-result span { display: block; font-size: .72rem; color: #8fa3ad; word-break: break-word; }
+.db-result.pop b { animation: dpop .35s ease-out; } @keyframes dpop { 0% { transform: scale(.4); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .die3.need, .die3.rolling, .db-result.pop b { animation: none; } }
+.freedice { background: #17222a; color: #cfdcd7; border-top: 1px solid #ffffff12; }
+.freedice summary { cursor: pointer; padding: .3rem .8rem; font-size: .85rem; font-weight: 600; color: #8fa3ad; }
+.freedice[open] { max-height: 45dvh; overflow-y: auto; } .freedice .tray { margin: 0 .8rem .6rem; }
+
+/* dadi che rotolano sulla mappa */
+.roll-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 6; transition: opacity .4s; } .roll-layer.fade { opacity: 0; }
+.rdie { position: absolute; left: 0; top: 0; width: 76px; height: 80px; margin: -40px 0 0 -38px; will-change: transform; }
+.rdie svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 6px 5px #0008); }
+.rdie svg polygon, .rdie svg rect, .rdie svg circle { fill: #f3ead4; stroke: #5a4a2b; stroke-width: 1.8; stroke-linejoin: round; }
+.rdie svg .f { fill: none; stroke: #5a4a2b; stroke-width: 1; opacity: .55; }
+.rdie svg text { fill: #2b2112; font: 800 15px var(--f-body); text-anchor: middle; }
+.rdie.dim { opacity: .45; filter: grayscale(.6); }
+.rdie.crit svg polygon, .rdie.crit svg rect { fill: #f4d58d; stroke: #bd8329; } .rdie.crit { filter: drop-shadow(0 0 10px #f4d58d); }
+.rdie.fumble svg polygon, .rdie.fumble svg rect { fill: #f3d9d6; stroke: #ae3f3a; } .rdie.fumble svg text { fill: #ae3f3a; }
+
+.zoom .btn.on { background: var(--teal-l); border-color: var(--teal); color: var(--teal-d); }

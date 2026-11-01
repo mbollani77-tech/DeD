@@ -16,19 +16,24 @@
   <section class="stage">
     <div class="toolbar" id="toolbar"></div>
     <div class="initstrip" id="init" hidden></div>
-    <div class="board-wrap">
-      <svg id="board" aria-label="Mappa della stanza"></svg>
-      <div id="board3d" class="board3d" hidden aria-label="Vista 3D della stanza"></div>
-      <div class="empty" id="empty" hidden></div>
-      <div class="zoom">
-        <button class="btn wide" data-act="view" aria-label="Cambia vista 2D o 3D" title="Vista 2D / 3D">3D</button>
-        <button class="btn" data-act="dmap" aria-label="Mappa del dungeon" title="Mappa del dungeon">🗺</button>
+    <div class="stage-row">
+      <div class="actionpanel" id="actionbar" hidden></div>
+      <div class="board-wrap">
+        <svg id="board" aria-label="Mappa della stanza"></svg>
+        <div id="board3d" class="board3d" hidden aria-label="Vista 3D della stanza"></div>
+        <div class="empty" id="empty" hidden></div>
+        <div class="zoom">
+          <button class="btn wide" data-act="view" aria-label="Cambia vista 2D o 3D" title="Vista 2D / 3D">3D</button>
+          <button class="btn" data-act="dmap" aria-label="Mappa del dungeon" title="Mappa del dungeon">🗺</button>
+          <button class="btn" data-act="mini" aria-label="Minimappa" title="Mostra o nascondi la minimappa">▣</button>
         <button class="btn" data-act="zoom-in" aria-label="Ingrandisci">+</button>
-        <button class="btn" data-act="zoom-out" aria-label="Riduci">−</button>
-        <button class="btn" data-act="fit" aria-label="Inquadra tutta la stanza">⤢</button>
+          <button class="btn" data-act="zoom-out" aria-label="Riduci">−</button>
+          <button class="btn" data-act="fit" aria-label="Inquadra tutta la stanza">⤢</button>
+        </div>
       </div>
     </div>
-    <div class="actionbar" id="actionbar" hidden></div>
+    <div class="dicebar" id="dicebar"></div>
+    <details class="freedice"><summary>Dadi liberi</summary><div id="dice-tray"></div></details>
     <div class="status" id="status" aria-live="polite"></div>
   </section>
   <aside class="side">
@@ -36,7 +41,6 @@
     <div class="panel" id="panel"></div>
     <div class="near" id="near"></div>
     <div class="inspector" id="inspector"></div>
-    <div id="dice-tray"></div>
     <div class="logbox"><ul id="log"></ul></div>
   </aside>
 </div>

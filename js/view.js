@@ -26,6 +26,7 @@ export function createView({ svg, host3d, handlers }) {
     show(v) { shown = v; layout(); },
     render(data) { last = data; if (mode === '3d' && b3) { b3.render(data); b2.render(data, { miniOnly: true }); } else b2.render(data); },
     zoom: f => cur().zoom(f), fit: () => cur().fit(), panToXY: (x, y) => cur().panToXY(x, y),
+    get miniOn() { return b2.miniOn; }, toggleMini() { return b2.setMini(!b2.miniOn); },
     paintCell: (...a) => b2.paintCell(...a),
   };
 }

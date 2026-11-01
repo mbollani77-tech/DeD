@@ -1,10 +1,11 @@
 // Regole di gioco: movimento, attacchi, magie, trappole, porte, quest, bottino.
 import { roll, rollD20, critExpr, scaleDice } from './dice.js';
+import { rollD20M, rollExprM } from './rolls.js';
 import { mod, prof, hexesFor } from './rules.js';
 import { update, patchData, say, setCampaignState } from './db.js';
 import { propBlocks } from './props.js';
 import { dist, los, key, reachable, hexesWithin } from './hex.js';
-import { getEco, saveEco, weaponSlot, spellSlot, spendWeapon, noSlot, advFor, isUnarmed, isRogue, isBonusSpell } from './economia.js';
+import { getEco, saveEco, weaponSlot, spellSlot, spendWeapon, noSlot, advPeek, advConsume, isUnarmed, isRogue, isBonusSpell } from './economia.js';
 import { attackFlavor, saveFlavor, mishapFlavor, outcomeOf, MOVE_MISHAPS } from './flavor.js';
 
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -48,8 +49,8 @@ export async function healChar(store, ch, amt) {
   await update(store, 'characters', ch.id, { hp }); return hp;
 }
 
-function resolveAttack(bonus, ac, adv) {
-  const r = rollD20(bonus, adv);
+async function resolveAttack(bonus, ac, adv, label, manual = true) {
+  const r = await rollD20M(bonus, adv, label, manual);
   const hit = r.crit || (!r.fumble && r.total >= ac);
   return { r, hit, crit: r.crit, outcome: outcomeOf(r, hit) };
 }
@@ -61,14 +62,15 @@ export async function weaponAttack(store, ch, w, target, adv = null, opts = {}) 
   const i = opts.i ?? (ch.data.armi || []).indexOf(w);
   const slot = opts.reaction ? 'reazione' : weaponSlot(ch, w, i);
   if (!slot) throw new Error(noSlot(ch));
-  adv = await advFor(store, ch, target, adv);
-  if (slot === 'reazione') await saveEco(store, ch, { re: 'Attacco di opportunità' }); else await spendWeapon(store, ch, w, i, slot);
   const m = mod(ch.stats[statFor(ch, w.stat)]);
   const dm = slot === 'bonus' && !isUnarmed(w) ? Math.min(0, m) : m; // la seconda arma non somma il modificatore positivo
-  const { r, hit, crit, outcome } = resolveAttack(m + prof(ch.level), target.data.ac ?? 10, adv);
+  // prima il tiro per colpire (si può annullare), poi si paga l'azione
+  const { r, hit, crit, outcome } = await resolveAttack(m + prof(ch.level), target.data.ac ?? 10, advPeek(ch, target, adv), `${ch.name}: tiro per colpire con ${w.nome} contro ${target.name} (CA ${target.data.ac ?? 10})`);
+  await advConsume(store, ch);
+  if (slot === 'reazione') await saveEco(store, ch, { re: 'Attacco di opportunità' }); else await spendWeapon(store, ch, w, i, slot);
   let txt = `${ch.name} ${slot === 'reazione' ? 'fa un attacco di opportunità su' : slot === 'bonus' ? 'attacca (azione bonus)' : 'attacca'} ${target.name} con ${w.nome}: ${r.text}`;
   if (hit) {
-    const d = roll(dmgExpr(crit ? critExpr(w.dado) : w.dado, dm)); const amt = Math.max(0, d.total);
+    const d = await rollExprM(dmgExpr(crit ? critExpr(w.dado) : w.dado, dm), `${ch.name}: ${crit ? 'CRITICO! ' : ''}tira i danni di ${w.nome}`); const amt = Math.max(0, d.total);
     const res = await damageEntity(store, target, amt);
     txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${amt} danni (${d.text})` + (res.dead ? `. ${target.name} è sconfitto!` : '');
   } else txt += ' → mancato';
@@ -86,16 +88,16 @@ export async function castSpell(store, ch, sp, hex, room, adv = null) {
   if (sp.tipo === 'cura') {
     if (!pc) throw new Error('Scegli un alleato da curare.');
     await pay();
-    const d = roll(dmgExpr(dado, sp.mod ? cm : 0)); const hp = await healChar(store, pc, Math.max(1, d.total));
+    const d = await rollExprM(dmgExpr(dado, sp.mod ? cm : 0), `${ch.name}: tira la cura di ${sp.nome}`); const hp = await healChar(store, pc, Math.max(1, d.total));
     return say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} su ${pc.name}: ${d.text} = ${Math.max(1, d.total)} PF recuperati (${hp}/${pc.max_hp}).`);
   }
   if (sp.tipo === 'attacco' || sp.tipo === 'auto') {
     if (!ent) throw new Error('Scegli un mostro come bersaglio.');
-    await pay(); if (sp.tipo === 'attacco') adv = await advFor(store, ch, ent, adv);
     let hit = true, crit = false, outcome = 'hit', head = `${ch.name} lancia ${sp.nome} contro ${ent.name}`;
-    if (sp.tipo === 'attacco') { const a = resolveAttack(cm + pb, ent.data.ac ?? 10, adv); hit = a.hit; crit = a.crit; outcome = a.outcome; head += `: ${a.r.text}`; }
+    if (sp.tipo === 'attacco') { const a = await resolveAttack(cm + pb, ent.data.ac ?? 10, advPeek(ch, ent, adv), `${ch.name}: tiro per colpire con ${sp.nome} contro ${ent.name} (CA ${ent.data.ac ?? 10})`); hit = a.hit; crit = a.crit; outcome = a.outcome; head += `: ${a.r.text}`; await advConsume(store, ch); }
+    await pay();
     if (!hit) return say(store, ch.name, 'combat', `${head} → mancato` + flav(outcome, ch.name, ent.name));
-    const d = roll(crit ? critExpr(dado) : dado); const res = await damageEntity(store, ent, d.total);
+    const d = await rollExprM(crit ? critExpr(dado) : dado, `${ch.name}: ${crit ? 'CRITICO! ' : ''}tira i danni di ${sp.nome}`); const res = await damageEntity(store, ent, d.total);
     return say(store, ch.name, 'combat', `${head} → ${crit ? 'CRITICO' : 'colpito'}: ${d.total} danni (${d.text})` + (res.dead ? `. ${ent.name} è sconfitto!` : ''));
   }
   // tiro salvezza, anche ad area
@@ -112,7 +114,7 @@ export async function castSpell(store, ch, sp, hex, room, adv = null) {
   }
   if (!targets.length) throw new Error('Nessun bersaglio nell\'area.');
   await pay();
-  const d = roll(dado); const lines = [];
+  const d = await rollExprM(dado, `${ch.name}: tira i danni di ${sp.nome} (i bersagli tirano la salvezza da soli)`); const lines = [];
   for (const t of targets) {
     const sm = t.kind === 'e' ? monSave(t.o, sp.salva || 'des') : mod(t.o.stats[sp.salva || 'des']);
     const sv = rollD20(sm, (sp.salva || 'des') === 'des' && getEco(t.o).schiva ? 'adv' : null); const ok = sv.total >= dc;
@@ -126,12 +128,12 @@ export async function castSpell(store, ch, sp, hex, room, adv = null) {
 export async function monsterAttack(store, ent, ch, adv = null, opts = {}) {
   const e = getEco(ent);
   if (opts.reaction) { if (e.re) return; } else if (e.az) throw new Error(`${ent.name} ha già usato la sua azione in questo round (${e.az}).`);
-  adv = await advFor(store, ent, ch, adv);
+  const manual = !opts.reaction; // l'attacco d'opportunità scatta da solo, gli altri li tira il Master
+  const { r, hit, crit, outcome } = await resolveAttack(ent.data.atk || 0, ch.ac, advPeek(ent, ch, adv), `${ent.name}: tiro per colpire contro ${ch.name} (CA ${ch.ac})`, manual);
   await saveEco(store, ent, opts.reaction ? { re: 'Attacco di opportunità' } : { az: 'Attacco' });
-  const { r, hit, crit, outcome } = resolveAttack(ent.data.atk || 0, ch.ac, adv);
   let txt = `${ent.name} ${opts.reaction ? 'fa un attacco di opportunità su' : 'attacca'} ${ch.name}: ${r.text}`;
   if (hit) {
-    const d = roll(crit ? critExpr(ent.data.dado || '1d4') : (ent.data.dado || '1d4')); const res = await damageChar(store, ch, d.total);
+    const d = await rollExprM(crit ? critExpr(ent.data.dado || '1d4') : (ent.data.dado || '1d4'), `${ent.name}: ${crit ? 'CRITICO! ' : ''}tira i danni`, manual); const res = await damageChar(store, ch, d.total);
     txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${d.total} danni (${d.text})` + (res.down ? `. ${ch.name} è a terra!` : '');
   } else txt += ' → mancato';
   say(store, ent.name, 'combat', txt + flav(outcome, ent.name, ch.name));
