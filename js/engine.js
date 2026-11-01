@@ -4,7 +4,7 @@ import { hexesFor } from './rules.js';
 import { resetEco } from './economia.js';
 import { monsterAutoTurn, regenMana, turnStart } from './combat.js';
 import { companionTurn } from './ai.js';
-import { isCoop } from './combatflow.js';
+import { isCoop, syncInit } from './combatflow.js';
 
 const CLIENT = Math.random().toString(36).slice(2, 9);
 export const partyLevel = store => (store.characters.length ? Math.max(1, Math.round(store.characters.reduce((a, c) => a + c.level, 0) / store.characters.length)) : 1);
@@ -37,11 +37,20 @@ let autoRunning = false;
  * I mostri giocano da soli finché non tocca a un giocatore (sempre nel gioco cooperativo; con un Master solo se «Mostri automatici» è attivo).
  * Più browser possono chiamarla: un piccolo blocco condiviso nella campagna evita che due giochino lo stesso mostro.
  */
+/** Se un avvio dei turni automatici è andato perso (pagina ricaricata, due schede aperte) lo si riprende ogni pochi secondi. */
+export function startWatchdog(store) { return setInterval(() => runAutoMonsters(store).catch(() => {}), 4000); }
+/** Sblocca a mano: toglie il blocco condiviso e fa ripartire il turno del mostro. */
+export async function kickMonsters(store) {
+  autoRunning = false; await setCampaignState(store, { autoLock: null });
+  say(store, 'Master', 'event', 'Il turno dei mostri riparte.');
+  return runAutoMonsters(store);
+}
 export async function runAutoMonsters(store) {
+  await syncInit(store);
   const st0 = store.campaign.state || {};
   const gate = isCoop(store) || !!st0.config?.auto; // i mostri giocano da soli solo in questi casi; i compagni giocano sempre da soli
   if (autoRunning) return;
-  const lock = st0.autoLock; if (lock && lock.by !== CLIENT && Date.now() - lock.at < 20000) return;
+  const lock = st0.autoLock; if (lock && lock.by !== CLIENT && Date.now() - lock.at < 12000) return;
   const isAuto = i => i && (i.k === 'e' || (i.k === 'c' && store.characters.find(c => c.id === i.id)?.data?.companion));
   const first = (st0.init || [])[st0.turn || 0]; if (!isAuto(first) || (first.k === 'e' && !gate)) return;
   autoRunning = true;
@@ -54,7 +63,7 @@ export async function runAutoMonsters(store) {
       if (ent && (cur.k === 'e' ? !ent.data.dead : ent.hp > 0)) {
         const rm = store.rooms.find(r => r.id === ent.room_id);
         await new Promise(r => setTimeout(r, 900)); // il tempo di leggere cosa succede
-        try { if (rm) await (cur.k === 'e' ? monsterAutoTurn(store, rm, ent, { auto: true }) : companionTurn(store, rm, ent)); } catch (e) { if (!/già usato/.test(e.message)) say(store, ent.name, 'combat', `${ent.name} resta fermo: ${e.message}`); }
+        try { if (rm) await (cur.k === 'e' ? monsterAutoTurn(store, rm, ent, { auto: true }) : companionTurn(store, rm, ent)); } catch (e) { say(store, ent.name, 'combat', /già usato/.test(e.message) ? `${ent.name} ha già agito in questo round: passa il turno.` : `${ent.name} resta fermo: ${e.message}`); }
         await new Promise(r => setTimeout(r, 700));
       }
       if (!(store.campaign.state?.init || []).length) break; // lo scontro è finito

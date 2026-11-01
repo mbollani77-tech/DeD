@@ -243,16 +243,21 @@ export async function monsterAutoTurn(store, room, ent, opts = {}) {
     return best;
   };
   const speed = Math.max(1, Math.floor(hexesFor(ent.data.speed || 30) * (hasStato(ent, 'congelamento') ? 0.5 : 1))); // il gelo rallenta
-  let dashed = false;
+  let dashed = false; const startDist = nearest(pos).d; const ranged = rng > 1;
   if (!inRange(pos)) {
     let best = bestSpot(speed);
     if (!inRange(best)) { best = bestSpot(speed * 2); dashed = true; } // non arriva: usa l'azione per Scattare
-    if (best.col !== pos.col || best.row !== pos.row) {
-      await update(store, 'entities', ent.id, { col: best.col, row: best.row }); pos = best;
-      say(store, ent.name, 'combat', `${ent.name} ${dashed ? 'scatta' : 'si muove'} verso ${nearest(pos).c.name}.`);
+    const moved = best.col !== pos.col || best.row !== pos.row;
+    if (moved) { await update(store, 'entities', ent.id, { col: best.col, row: best.row }); pos = best; }
+    const nn = nearest(pos); const tgt = nn.c.name;
+    if (dashed) { // il turno finisce qui: lo si racconta, così si capisce perché non attacca
+      say(store, ent.name, 'combat', moved
+        ? `${ent.name} è troppo lontano da ${tgt} (${startDist} esagoni) per attaccare: usa l'azione per scattare e si avvicina fino a ${nn.d} ${nn.d === 1 ? 'esagono' : 'esagoni'}. Questo turno non attacca.`
+        : `${ent.name} non riesce ad avvicinarsi a ${tgt} (${startDist} esagoni): la strada è bloccata da ostacoli o da altri personaggi. Perde il turno.`);
+      return saveEco(store, ent, { az: moved ? 'Scatto' : 'Nessuna azione utile' });
     }
-  }
-  if (dashed) return saveEco(store, ent, { az: 'Scatto' });
+    say(store, ent.name, 'combat', ranged ? `${ent.name} si sposta a ${nn.d} esagoni da ${tgt}, a tiro, e attacca da lontano.` : `${ent.name} si avvicina a ${tgt} (da ${startDist} a ${nn.d} ${nn.d === 1 ? 'esagono' : 'esagoni'}) e attacca.`);
+  } else say(store, ent.name, 'combat', `${ent.name} è già a tiro di ${nearest(pos).c.name} (${startDist} ${startDist === 1 ? 'esagono' : 'esagoni'}) e attacca.`);
   const t = nearest(pos);
   if (inRange(pos)) await monsterAttack(store, ent, t.c, null, opts.auto ? { auto: true } : {});
   else say(store, ent.name, 'combat', `${ent.name} non riesce a raggiungere nessuno.`);

@@ -365,6 +365,7 @@ async function rollInit() {
 const resetMoves = () => engine.resetMoves(store);
 const stepTurn = () => engine.stepTurn(store);
 const runAutoMonsters = () => engine.runAutoMonsters(store);
+engine.startWatchdog(store); // i turni dei mostri non restano mai fermi
 
 async function nextTurn() {
   const st = store.campaign.state || {}; const init = st.init || [];

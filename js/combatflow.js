@@ -44,6 +44,20 @@ export async function scaleForParty(store, roomId, chars = null) {
   if (added.length) { await update(store, 'rooms', roomId, { meta: { ...room.meta, reinf: spawned + added.length } }); say(store, 'Master', 'event', `Il rumore attira altri nemici: arrivano rinforzi (${added.join(', ')}).`); }
 }
 
+/** Chi è in campo ma non è in iniziativa (un mostro scoperto o arrivato a scontro iniziato, un giocatore entrato dopo) si unisce allo scontro. */
+export async function syncInit(store) {
+  const st = store.campaign.state || {}; const init = st.init || []; if (!init.length) return;
+  const rooms = new Set(init.filter(i => i.k === 'c').map(i => store.characters.find(c => c.id === i.id)?.room_id).filter(Boolean));
+  const has = id => init.some(i => i.id === id);
+  const add = [
+    ...store.entities.filter(e => e.kind === 'monster' && rooms.has(e.room_id) && !e.hidden && !e.data.dead && !has(e.id)).map(e => ({ k: 'e', id: e.id, name: e.name, roll: rollD20(e.data.dex || 0).total })),
+    ...store.characters.filter(c => c.hp > 0 && rooms.has(c.room_id) && !has(c.id)).map(c => ({ k: 'c', id: c.id, name: c.name, roll: rollD20(mod(c.stats.des)).total })),
+  ];
+  if (!add.length) return;
+  await setCampaignState(store, { init: [...init, ...add] });
+  say(store, 'Master', 'event', `${add.map(a => a.name).join(', ')} ${add.length > 1 ? 'si uniscono' : 'si unisce'} allo scontro (iniziativa ${add.map(a => a.roll).join(', ')}): agiranno alla fine del giro.`);
+}
+
 export const inCombat = store => (store.campaign.state?.init || []).length > 0;
 export const isCoop = store => !!store.campaign.state?.coop;
 const liveMons = (store, roomId) => store.entities.filter(e => e.room_id === roomId && e.kind === 'monster' && !e.data.dead);

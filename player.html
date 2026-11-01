@@ -36,13 +36,15 @@
     <div class="dicebar" id="dicebar"></div>
     <details class="freedice"><summary>Dadi liberi</summary><div id="dice-tray"></div></details>
     <div class="status" id="status" aria-live="polite"></div>
+    <section class="chron" id="chron" aria-label="Cronaca della partita">
+      <button type="button" class="chron-h" data-act="chron" aria-expanded="true">Cronaca ▾</button>
+      <ul id="log" class="chron-log" aria-live="polite"></ul>
+    </section>
   </section>
   <aside class="side">
     <nav class="tabs" id="tabs"></nav>
     <div class="panel" id="panel"></div>
-    <div class="near" id="near"></div>
     <div class="inspector" id="inspector"></div>
-    <div class="logbox"><ul id="log"></ul></div>
   </aside>
 </div>
 <div id="chooser" class="chooser" hidden></div>
