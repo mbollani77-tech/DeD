@@ -44,7 +44,7 @@ export async function peacefulMeeting(store, ch, room, hex) {
   const cand = makeCandidate(Math.max(1, lvl + Math.floor(Math.random() * 3) - 1));
   const taken = new Set([...store.characters.filter(c => c.room_id === room.id).map(c => key(c.col, c.row)), ...store.entities.filter(e => e.room_id === room.id).map(e => key(e.col, e.row))]);
   const spot = freeNear(room.cells, room.cols, room.rows, hex, taken, 1)[0]; if (!spot) return;
-  await insert(store, 'entities', { campaign_id: store.campaign.id, room_id: room.id, kind: 'npc', name: cand.name, col: spot.col, row: spot.row, hidden: false, data: { role: 'viandante', cand, dc: 10 + cand.level, fails: 0 } });
+  try { await insert(store, 'entities', { campaign_id: store.campaign.id, room_id: room.id, kind: 'npc', name: cand.name, col: spot.col, row: spot.row, hidden: false, data: { role: 'viandante', cand, dc: 10 + cand.level, fails: 0 } }); } catch { return; } // database senza abitanti: niente viandante
   say(store, ch.name, 'event', `Lungo la strada ${ch.name} incontra un viandante: ${cand.name}, ${CLASSES.find(c => c.id === cand.classId).nome} di livello ${cand.level}. Non sembra ostile: provate a parlarci!`);
 }
 

@@ -1,5 +1,5 @@
 // Creazione dell'avventura (dungeon singolo o campagna con mappa del mondo): usata dal Master e dai giocatori nel gioco cooperativo.
-import { insert, insertMany, update, setCampaignState } from './db.js';
+import { insert, insertMany, update, remove, setCampaignState } from './db.js';
 import { randomProps } from './random.js';
 import { generateWorld, generateTown, freeNear, oasisName } from './world.js';
 import { TEMPLATES } from './wizard.js';
@@ -29,7 +29,21 @@ export async function createGenerated(store, n, link, opts = {}, ui = {}) {
 }
 
 /** Campagna con mappa del mondo: terreno, strade, paesi e un dungeon per ogni livello del percorso. */
+/** Se il database rifiuta gli abitanti dei paesi manca l'aggiornamento (supabase/aggiornamento-npc.sql): lo si dice chiaramente. */
+const friendly = e => (/entities_kind_check|check constraint/i.test(String(e?.message || e))
+  ? new Error('Il database non accetta ancora gli abitanti dei paesi. Apri Supabase → SQL Editor, incolla ed esegui il contenuto del file supabase/aggiornamento-npc.sql, poi riprova: la creazione è stata annullata e non resta niente a metà.')
+  : e);
+
 export async function createWorldCampaign(store, cfg, ui = {}) {
+  const base0 = Math.max(0, ...store.rooms.map(r => r.sort)) + 1;
+  try { return await buildWorldCampaign(store, cfg, ui); } catch (e) {
+    // annulla tutto quello che è stato creato finora (le stanze portano via con sé le loro entità)
+    for (const r of store.rooms.filter(r => r.sort >= base0)) await remove(store, 'rooms', r.id).catch(() => {});
+    throw friendly(e);
+  }
+}
+
+async function buildWorldCampaign(store, cfg, ui = {}) {
   const cid = store.campaign.id; const toast = (...a) => ui.toast?.(...a);
   const ds = ['facile', 'normale', 'difficile', 'mortale'];
   toast('Creo il mondo…');
@@ -51,7 +65,8 @@ export async function createWorldCampaign(store, cfg, ui = {}) {
   }
   w.places.filter(p => p.tipo === 'oasi').forEach(p => rowsE.push({ campaign_id: cid, room_id: world.id, kind: 'door', name: oasisName(p.order), col: p.col, row: p.row, hidden: false, data: { place: 'oasi', icon: '🌴', locked: false } }));
   w.places.filter(p => p.tipo === 'albero').forEach(p => rowsE.push({ campaign_id: cid, room_id: world.id, kind: 'door', name: FRUTTI[p.frutto].albero, col: p.col, row: p.row, hidden: false, data: { place: 'albero', icon: FRUTTI[p.frutto].icona, frutto: p.frutto, locked: false } }));
-  await insertMany(store, 'entities', rowsE);
+  await insertMany(store, 'entities', rowsE.filter(r => r.kind !== 'npc'));
+  await insertMany(store, 'entities', rowsE.filter(r => r.kind === 'npc')); // se qui il database rifiuta, tutto viene annullato
   const dung = w.places.filter(x => x.tipo === 'dungeon').sort((a, b) => a.order - b.order);
   for (const [i, tid] of cfg.levels.entries()) {
     const tp = TEMPLATES.find(t => t.id === tid); const place = dung[i]; if (!tp || !place) continue;

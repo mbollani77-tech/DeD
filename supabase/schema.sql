@@ -36,7 +36,7 @@ create table if not exists public.entities (
   id uuid primary key default gen_random_uuid(),
   campaign_id uuid not null references public.campaigns(id) on delete cascade,
   room_id uuid not null references public.rooms(id) on delete cascade,
-  kind text not null check (kind in ('monster','treasure','trap','door')),
+  kind text not null check (kind in ('monster','treasure','trap','door','npc')),
   name text not null,
   col int not null,
   row int not null,

@@ -57,7 +57,9 @@ export async function buildDungeon(store, { n, base, tier = 0, level, party, lin
     const far = freeNear(g.cells, g.cols, g.rows, g.meta.start, taken, 14); const spot = far[far.length - 1];
     if (spot) { const cand = makeCandidate(Math.max(1, lvl + Math.floor(Math.random() * 3) - 1)); rows.push({ campaign_id: cid, room_id: rooms[i].id, kind: 'npc', name: cand.name, col: spot.col, row: spot.row, hidden: false, data: { role: 'prigioniero', cand, dc: 10 + cand.level, fails: 0 } }); }
   }
-  await insertMany(store, 'entities', rows);
+  await insertMany(store, 'entities', rows.filter(r => r.kind !== 'npc'));
+  const npcRows = rows.filter(r => r.kind === 'npc'); // se il database non conosce ancora gli abitanti, il dungeon nasce lo stesso, senza prigioniero
+  if (npcRows.length) { try { await insertMany(store, 'entities', npcRows); } catch { /* niente prigioniero */ } }
   return { rooms, gens, did };
 }
 

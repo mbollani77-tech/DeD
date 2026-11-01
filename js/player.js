@@ -1,4 +1,4 @@
-import { openCampaign, insert, update, remove, say } from './db.js';
+import { openCampaign, insert, update, remove, say, setCampaignState } from './db.js';
 import { $, esc, toast, ask, confirmBox } from './ui.js';
 import { createView } from './view.js';
 import { openDungeonMap } from './dungeonmap.js';
@@ -145,7 +145,7 @@ function renderBoard(ch, r) {
   const empty = $('#empty'); empty.hidden = !!r; board.show(!!r);
   const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
   $('[data-act="mini"]')?.classList.toggle('on', board.miniOn);
-  if (!r) { empty.innerHTML = store.campaign.state?.coop ? (store.rooms.length ? '<div><h2>Un attimo…</h2><p>Il tuo personaggio sta per entrare nell\'avventura.</p></div>' : '<div><h2>Inizia l\'avventura</h2><p>Scegli come sarà: il gioco crea mappa, mostri e tesori. Prima crea il tuo personaggio (e gli amici possono unirsi col codice in alto).</p><button class="btn primary" data-act="adv-start">Crea l\'avventura</button></div>') : '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
+  if (!r) { empty.innerHTML = store.campaign.state?.coop ? (store.rooms.length ? '<div class="fail-box"><h2>Un attimo…</h2><p>Il tuo personaggio sta per entrare nell\'avventura.</p><p class="muted">Se questa schermata non cambia entro un minuto, la creazione si è interrotta a metà: puoi cancellare le stanze e ricominciare da capo.</p><button class="btn" data-act="adv-reset">Cancella e ricomincia</button></div>' : '<div><h2>Inizia l\'avventura</h2><p>Scegli come sarà: il gioco crea mappa, mostri e tesori. Prima crea il tuo personaggio (e gli amici possono unirsi col codice in alto).</p><button class="btn primary" data-act="adv-start">Crea l\'avventura</button></div>') : '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
   board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, turnId: (store.campaign.state?.init || [])[store.campaign.state?.turn || 0]?.id, visible: visibleSet(r) });
 }
 function renderActionbar(ch) {
@@ -195,7 +195,7 @@ function tabScheda(ch) {
   return `<div class="sheet"><div class="sheet-head"><div class="sheet-por">${portraitOf(ch)}</div><div><h2>${esc(ch.name)}</h2><p class="muted">${esc(ch.race)} ${esc(ch.class)} · livello ${ch.level}${ch.player ? ` · ${esc(ch.player)}` : ''}</p>${ch.data.genere ? `<p class="muted">${GENERE_ICONA[ch.data.genere]} ${GENERI[ch.data.genere]}</p>` : `<p class="muted">Genere: <span class="seg">${Object.entries(GENERI).map(([k, l]) => `<button type="button" class="seg-b" data-act="set-genere" data-g="${k}">${GENERE_ICONA[k]} ${l}</button>`).join('')}</span></p>`}</div></div>
   <div class="hp"><span>PF</span>${meter(ch.hp, ch.max_hp)}<em>${ch.hp} / ${ch.max_hp}</em></div>
   ${maxMana(ch) ? `<div class="hp mana"><span>Mana</span><div class="manameter"><i style="width:${Math.round(manaOf(ch) / maxMana(ch) * 100)}%"></i></div><em>${manaOf(ch)} / ${maxMana(ch)}</em></div>` : ''}
-  ${(() => { const st = statiOf(ch); return st.length ? `<div class="statuses">${st.map(s => { const d = STATI[s.id]; return `<span class="status" title="${esc(d.desc + (d.cura ? ' Cura: ' + d.cura + '.' : ''))}">${d.icona} ${esc(d.nome)}${s.id === 'resistenza' ? ' al ' + esc((TIPI[s.tipo] || [''])[0].toLowerCase()) : ''}<small>${s.turni >= 99 ? 'finché non guarisci' : s.turni + (s.turni === 1 ? ' turno' : ' turni')}</small></span>`; }).join('')}</div>` : ''; })()}
+  ${(() => { const st = statiOf(ch); return st.length ? `<div class="statuses">${st.map(s => { const d = STATI[s.id]; return `<span class="stato" title="${esc(d.desc + (d.cura ? ' Cura: ' + d.cura + '.' : ''))}">${d.icona} ${esc(d.nome)}${s.id === 'resistenza' ? ' al ' + esc((TIPI[s.tipo] || [''])[0].toLowerCase()) : ''}<small>${s.turni >= 99 ? 'finché non guarisci' : s.turni + (s.turni === 1 ? ' turno' : ' turni')}</small></span>`; }).join('')}</div>` : ''; })()}
   <div class="vitals"><div class="vital"><b>${ch.ac}</b><span>CA</span></div><div class="vital"><b>${ch.speed}<small>ft</small></b><span>${hexesFor(ch.speed)} esagoni</span></div><div class="vital"><b>${fmtMod(pb)}</b><span>Competenza</span></div><div class="vital"><b>${fmtMod(mod(ch.stats.des))}</b><span>Iniziativa</span></div></div>
   <div class="abilities">${STATS.map(ab).join('')}</div>
   ${(() => { const sk = skillList(ch); const pr = sk.filter(x => x.prof); return `<details class="skills" open><summary>Abilità <span class="muted">(${pr.length} competenze)</span></summary><div class="sk-prof">${pr.map(x => `<span class="sk on" title="${esc(x.nome)}: ${STAT_NAME[x.stat]} + competenza">${esc(x.nome)} <b>${fmtMod(x.bonus)}</b></span>`).join('')}</div><details class="sk-all"><summary>Tutte le abilità</summary><div class="sk-list">${sk.filter(x => !x.prof).map(x => `<span class="sk">${esc(x.nome)} <b>${fmtMod(x.bonus)}</b></span>`).join('')}</div></details></details>`; })()}
@@ -339,6 +339,12 @@ const acts = {
   loot: d => busy(() => lootEntity(store, me(), ent(d.id))),
   talk: d => busy(() => talkTo(store, me(), ent(d.id))),
   'spend-points': () => busy(() => spendPoints(store, me())),
+  'adv-reset': () => busy(async () => {
+    if (!(await confirmBox('Cancellare tutte le stanze di questa avventura e ricominciare? I personaggi restano.'))) return;
+    for (const r of [...store.rooms]) await remove(store, 'rooms', r.id);
+    for (const c of store.characters) await update(store, 'characters', c.id, { room_id: null });
+    await setCampaignState(store, { dungeons: {}, completed: 0, init: [], config: null }); render();
+  }),
   'adv-start': () => busy(async () => {
     if (store.rooms.length) return;
     const cfg = await dungeonWizard({ level: partyLevel(store), party: Math.max(2, store.characters.length || 3) }); if (!cfg || store.rooms.length) return;

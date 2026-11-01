@@ -7,7 +7,7 @@ export function toast(msg, kind = '') {
   let t = $('#toast');
   if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
   t.className = 'show ' + kind; t.textContent = msg;
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.className = ''), 3200);
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.className = ''), kind === 'err' ? 10000 : 3200);
 }
 
 function fieldHtml(f) {

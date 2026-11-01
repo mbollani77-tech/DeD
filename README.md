@@ -42,6 +42,10 @@ Oppure da terminale, dentro la cartella: `npx vercel` (poi `npx vercel --prod`).
 ### 3. Prova in locale (facoltativo)
 `npx serve .` e apri l'indirizzo mostrato. Non aprire i file con doppio clic: i moduli JavaScript richiedono un server.
 
+## Aggiornare un database già creato
+
+Se avevi già eseguito `supabase/schema.sql` prima dell'arrivo di paesi, prigionieri e viandanti, apri **SQL Editor** in Supabase, incolla il contenuto di `supabase/aggiornamento-npc.sql` e premi **Run** (una volta sola). Senza questo passaggio la creazione del mondo viene annullata con un messaggio che lo ricorda.
+
 ## Come si gioca
 1. Il Master apre la home, scrive il nome della campagna e preme **Crea**. **Salva la chiave del Master** (serve per rientrare da un altro dispositivo).
 2. Il Master crea le stanze (o preme *Dungeon casuale*) e passa ai giocatori il **codice** di 6 caratteri.
