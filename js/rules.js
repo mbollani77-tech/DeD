@@ -30,7 +30,9 @@ export const WEAPONS = [
   { id: 'mazza', nome: 'Mazza', dado: '1d6', stat: 'for', gittata: 5 },
   { id: 'bastone', nome: 'Bastone ferrato', dado: '1d6', stat: 'for', gittata: 5 },
   { id: 'stocco', nome: 'Stocco', dado: '1d8', stat: 'fin', gittata: 5 },
-  { id: 'pugnale', nome: 'Pugnale', dado: '1d4', stat: 'fin', gittata: 5 },
+  { id: 'pugnale', nome: 'Pugnale', dado: '1d4', stat: 'fin', gittata: 5, leggera: true },
+  { id: 'spada-corta', nome: 'Spada corta', dado: '1d6', stat: 'fin', gittata: 5, leggera: true },
+  { id: 'ascia-manesca', nome: 'Ascia manesca', dado: '1d6', stat: 'for', gittata: 5, leggera: true },
   { id: 'senz-armi', nome: "Colpo senz'armi", dado: '1d4', stat: 'fin', gittata: 5 },
   { id: 'giavellotto', nome: 'Giavellotto', dado: '1d6', stat: 'for', gittata: 30 },
   { id: 'arco-corto', nome: 'Arco corto', dado: '1d6', stat: 'des', gittata: 80 },
@@ -49,7 +51,7 @@ export const SPELLS = [
   { id: 'scherno-crudele', nome: 'Scherno crudele', gittata: 60, dado: '1d4', tipo: 'salvezza', salva: 'sag', meta: false, livello: 0 },
   { id: 'dardo-incantato', nome: 'Dardo incantato', gittata: 120, dado: '3d4+3', tipo: 'auto', livello: 1 },
   { id: 'cura-ferite', nome: 'Cura ferite', gittata: 5, dado: '1d8', tipo: 'cura', mod: true, livello: 1 },
-  { id: 'parola-guaritrice', nome: 'Parola guaritrice', gittata: 60, dado: '1d4', tipo: 'cura', mod: true, livello: 1 },
+  { id: 'parola-guaritrice', nome: 'Parola guaritrice', gittata: 60, dado: '1d4', tipo: 'cura', mod: true, livello: 1, azione: 'bonus' },
   { id: 'palla-di-fuoco', nome: 'Palla di fuoco', gittata: 150, dado: '8d6', tipo: 'salvezza', salva: 'des', meta: true, area: 20, livello: 3 },
 ];
 

@@ -4,6 +4,8 @@ import { mod, prof, hexesFor } from './rules.js';
 import { update, patchData, say, setCampaignState } from './db.js';
 import { propBlocks } from './props.js';
 import { dist, los, key, reachable, hexesWithin } from './hex.js';
+import { getEco, saveEco, weaponSlot, spellSlot, spendWeapon, noSlot, advFor, isUnarmed, isRogue, isBonusSpell } from './economia.js';
+import { attackFlavor, saveFlavor, mishapFlavor, outcomeOf, MOVE_MISHAPS } from './flavor.js';
 
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const noArt = s => s.replace(/^(il|lo|la|le|gli|i|un|uno|una|l)\s+/, '');
@@ -48,22 +50,34 @@ export async function healChar(store, ch, amt) {
 
 function resolveAttack(bonus, ac, adv) {
   const r = rollD20(bonus, adv);
-  return { r, hit: r.crit || (!r.fumble && r.total >= ac), crit: r.crit };
+  const hit = r.crit || (!r.fumble && r.total >= ac);
+  return { r, hit, crit: r.crit, outcome: outcomeOf(r, hit) };
 }
+/** Commento solo per i momenti che lo meritano (1 naturale, mancato, critico). */
+const flav = (outcome, a, d) => (outcome === 'hit' ? '' : ' — ' + attackFlavor(outcome, a, d));
 
-export async function weaponAttack(store, ch, w, target, adv = null) {
+/** opts.i = indice dell'arma; opts.reaction = attacco di opportunità (usa la reazione). */
+export async function weaponAttack(store, ch, w, target, adv = null, opts = {}) {
+  const i = opts.i ?? (ch.data.armi || []).indexOf(w);
+  const slot = opts.reaction ? 'reazione' : weaponSlot(ch, w, i);
+  if (!slot) throw new Error(noSlot(ch));
+  adv = await advFor(store, ch, target, adv);
+  if (slot === 'reazione') await saveEco(store, ch, { re: 'Attacco di opportunità' }); else await spendWeapon(store, ch, w, i, slot);
   const m = mod(ch.stats[statFor(ch, w.stat)]);
-  const { r, hit, crit } = resolveAttack(m + prof(ch.level), target.data.ac ?? 10, adv);
-  let txt = `${ch.name} attacca ${target.name} con ${w.nome}: ${r.text}`;
+  const dm = slot === 'bonus' && !isUnarmed(w) ? Math.min(0, m) : m; // la seconda arma non somma il modificatore positivo
+  const { r, hit, crit, outcome } = resolveAttack(m + prof(ch.level), target.data.ac ?? 10, adv);
+  let txt = `${ch.name} ${slot === 'reazione' ? 'fa un attacco di opportunità su' : slot === 'bonus' ? 'attacca (azione bonus)' : 'attacca'} ${target.name} con ${w.nome}: ${r.text}`;
   if (hit) {
-    const d = roll(dmgExpr(crit ? critExpr(w.dado) : w.dado, m)); const amt = Math.max(0, d.total);
+    const d = roll(dmgExpr(crit ? critExpr(w.dado) : w.dado, dm)); const amt = Math.max(0, d.total);
     const res = await damageEntity(store, target, amt);
     txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${amt} danni (${d.text})` + (res.dead ? `. ${target.name} è sconfitto!` : '');
   } else txt += ' → mancato';
-  say(store, ch.name, 'combat', txt);
+  say(store, ch.name, 'combat', txt + flav(outcome, ch.name, target.name));
 }
 
 export async function castSpell(store, ch, sp, hex, room, adv = null) {
+  const slot = spellSlot(ch, sp); if (!slot) throw new Error(noSlot(ch, isBonusSpell(sp)));
+  const pay = () => saveEco(store, ch, slot === 'bonus' ? { bo: sp.nome } : { az: sp.nome });
   const cm = mod(ch.stats[ch.data.cast || 'int']), pb = prof(ch.level), dc = 8 + pb + cm;
   const dado = scaleDice(sp.dado, sp.livello === 0 ? ch.level : null);
   const ent = liveMonsters(store, room.id).find(e => e.col === hex.col && e.row === hex.row);
@@ -71,14 +85,16 @@ export async function castSpell(store, ch, sp, hex, room, adv = null) {
 
   if (sp.tipo === 'cura') {
     if (!pc) throw new Error('Scegli un alleato da curare.');
+    await pay();
     const d = roll(dmgExpr(dado, sp.mod ? cm : 0)); const hp = await healChar(store, pc, Math.max(1, d.total));
     return say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} su ${pc.name}: ${d.text} = ${Math.max(1, d.total)} PF recuperati (${hp}/${pc.max_hp}).`);
   }
   if (sp.tipo === 'attacco' || sp.tipo === 'auto') {
     if (!ent) throw new Error('Scegli un mostro come bersaglio.');
-    let hit = true, crit = false, head = `${ch.name} lancia ${sp.nome} contro ${ent.name}`;
-    if (sp.tipo === 'attacco') { const a = resolveAttack(cm + pb, ent.data.ac ?? 10, adv); hit = a.hit; crit = a.crit; head += `: ${a.r.text}`; }
-    if (!hit) return say(store, ch.name, 'combat', `${head} → mancato`);
+    await pay(); if (sp.tipo === 'attacco') adv = await advFor(store, ch, ent, adv);
+    let hit = true, crit = false, outcome = 'hit', head = `${ch.name} lancia ${sp.nome} contro ${ent.name}`;
+    if (sp.tipo === 'attacco') { const a = resolveAttack(cm + pb, ent.data.ac ?? 10, adv); hit = a.hit; crit = a.crit; outcome = a.outcome; head += `: ${a.r.text}`; }
+    if (!hit) return say(store, ch.name, 'combat', `${head} → mancato` + flav(outcome, ch.name, ent.name));
     const d = roll(crit ? critExpr(dado) : dado); const res = await damageEntity(store, ent, d.total);
     return say(store, ch.name, 'combat', `${head} → ${crit ? 'CRITICO' : 'colpito'}: ${d.total} danni (${d.text})` + (res.dead ? `. ${ent.name} è sconfitto!` : ''));
   }
@@ -95,25 +111,30 @@ export async function castSpell(store, ch, sp, hex, room, adv = null) {
     targets = [{ kind: 'e', o: ent }];
   }
   if (!targets.length) throw new Error('Nessun bersaglio nell\'area.');
+  await pay();
   const d = roll(dado); const lines = [];
   for (const t of targets) {
     const sm = t.kind === 'e' ? monSave(t.o, sp.salva || 'des') : mod(t.o.stats[sp.salva || 'des']);
-    const sv = rollD20(sm); const ok = sv.total >= dc;
+    const sv = rollD20(sm, (sp.salva || 'des') === 'des' && getEco(t.o).schiva ? 'adv' : null); const ok = sv.total >= dc;
     const amt = ok ? (sp.meta ? Math.floor(d.total / 2) : 0) : d.total;
     if (amt > 0) { if (t.kind === 'e') await damageEntity(store, t.o, amt); else await damageChar(store, t.o, amt); }
-    lines.push(`${t.o.name} ${ok ? 'resiste' : 'fallisce'} (${sv.total}) → ${amt}`);
+    lines.push(`${t.o.name} ${ok ? 'resiste' : 'fallisce'} (${sv.total}) → ${amt}. ${saveFlavor(ok, t.o.name)}`);
   }
-  say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} (CD ${dc}): ${d.text} = ${d.total} danni base. ${lines.join('; ')}.`);
+  say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} (CD ${dc}): ${d.text} = ${d.total} danni base. ${lines.join(' ')}`);
 }
 
-export async function monsterAttack(store, ent, ch, adv = null) {
-  const { r, hit, crit } = resolveAttack(ent.data.atk || 0, ch.ac, adv);
-  let txt = `${ent.name} attacca ${ch.name}: ${r.text}`;
+export async function monsterAttack(store, ent, ch, adv = null, opts = {}) {
+  const e = getEco(ent);
+  if (opts.reaction) { if (e.re) return; } else if (e.az) throw new Error(`${ent.name} ha già usato la sua azione in questo round (${e.az}).`);
+  adv = await advFor(store, ent, ch, adv);
+  await saveEco(store, ent, opts.reaction ? { re: 'Attacco di opportunità' } : { az: 'Attacco' });
+  const { r, hit, crit, outcome } = resolveAttack(ent.data.atk || 0, ch.ac, adv);
+  let txt = `${ent.name} ${opts.reaction ? 'fa un attacco di opportunità su' : 'attacca'} ${ch.name}: ${r.text}`;
   if (hit) {
     const d = roll(crit ? critExpr(ent.data.dado || '1d4') : (ent.data.dado || '1d4')); const res = await damageChar(store, ch, d.total);
     txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${d.total} danni (${d.text})` + (res.down ? `. ${ch.name} è a terra!` : '');
   } else txt += ' → mancato';
-  say(store, ent.name, 'combat', txt);
+  say(store, ent.name, 'combat', txt + flav(outcome, ent.name, ch.name));
 }
 
 /** Il mostro si avvicina al personaggio più vicino e attacca se è a portata. */
@@ -121,22 +142,31 @@ export async function monsterAutoTurn(store, room, ent) {
   const pcs = store.characters.filter(c => c.room_id === room.id && c.hp > 0);
   if (!pcs.length) throw new Error('Nessun personaggio in questa stanza.');
   const nearest = from => pcs.map(c => ({ c, d: dist(from, c) })).sort((a, b) => a.d - b.d)[0];
+  if (getEco(ent).az) throw new Error(`${ent.name} ha già usato la sua azione in questo round (${getEco(ent).az}).`);
   const rng = hexesFor(ent.data.gittata || 5);
   const inRange = p => { const n = nearest(p); return n.d <= rng && (n.d <= 1 || los(room, p, n.c)); };
   let pos = { col: ent.col, row: ent.row };
-  if (!inRange(pos)) {
-    const reach = reachable(room, pos, hexesFor(ent.data.speed || 30), blockedSet(store, room, { exceptEnt: ent.id, monster: true }));
+  const bestSpot = speedHexes => {
+    const reach = reachable(room, pos, speedHexes, blockedSet(store, room, { exceptEnt: ent.id, monster: true }));
     let best = { col: pos.col, row: pos.row, score: nearest(pos).d * 10 };
     for (const [k, cost] of reach) {
       const [col, row] = k.split(',').map(Number); const p = { col, row };
       const score = nearest(p).d * 10 + cost - (inRange(p) ? 50 : 0);
       if (score < best.score) best = { ...p, score };
     }
+    return best;
+  };
+  const speed = hexesFor(ent.data.speed || 30);
+  let dashed = false;
+  if (!inRange(pos)) {
+    let best = bestSpot(speed);
+    if (!inRange(best)) { best = bestSpot(speed * 2); dashed = true; } // non arriva: usa l'azione per Scattare
     if (best.col !== pos.col || best.row !== pos.row) {
       await update(store, 'entities', ent.id, { col: best.col, row: best.row }); pos = best;
-      say(store, ent.name, 'combat', `${ent.name} si muove verso ${nearest(pos).c.name}.`);
+      say(store, ent.name, 'combat', `${ent.name} ${dashed ? 'scatta' : 'si muove'} verso ${nearest(pos).c.name}.`);
     }
   }
+  if (dashed) return saveEco(store, ent, { az: 'Scatto' });
   const t = nearest(pos);
   if (inRange(pos)) await monsterAttack(store, ent, t.c);
   else say(store, ent.name, 'combat', `${ent.name} non riesce a raggiungere nessuno.`);
@@ -167,16 +197,72 @@ export async function disarmTrap(store, ch, trap) {
   else say(store, ch.name, 'event', `${ch.name} non riesce a disarmare «${trap.name}» (${r.text} contro CD ${dc}).`);
 }
 
+/** Chi lascia la portata di un mostro (senza Disimpegno) subisce un attacco di opportunità. */
+async function opportunityOnLeave(store, room, ch, from, to) {
+  if (getEco(ch).disimp) return;
+  for (const m of liveMonsters(store, room.id)) {
+    if (m.hidden || (m.data.gittata || 5) > 5 || getEco(m).re) continue;
+    if (dist(m, from) > 1 || dist(m, to) <= 1) continue;
+    say(store, m.name, 'combat', `${ch.name} si allontana da ${m.name}: attacco di opportunità!`);
+    await monsterAttack(store, m, ch, null, { reaction: true });
+    if (ch.hp <= 0) return;
+  }
+}
+
+/** Attacco di opportunità del giocatore (usa la reazione) con la sua arma da mischia migliore. */
+export async function opportunityAttack(store, ch, target) {
+  if (getEco(ch).re) throw new Error(`Hai già usato la reazione in questo round (${getEco(ch).re}).`);
+  if (dist(ch, target) > 1) throw new Error('Il bersaglio deve essere adiacente.');
+  const avg = d => String(d).replace(/\s/g, '').split(/(?=[+-])/).reduce((a, t) => { const m = t.match(/^[+-]?(\d*)d(\d+)$/); return a + (m ? (+(m[1] || 1)) * (+m[2] + 1) / 2 : +t || 0); }, 0);
+  const melee = (ch.data.armi || []).filter(w => (w.gittata || 5) <= 5).sort((a, b) => avg(b.dado) - avg(a.dado));
+  if (!melee.length) throw new Error('Non hai un\'arma da mischia.');
+  return weaponAttack(store, ch, melee[0], target, null, { reaction: true });
+}
+
+/** Azioni generiche per giocatori e mostri: scatto, schivare, disimpegno, aiuto (+ azione scaltra del ladro). */
+export async function doAction(store, o, what, ally = null) {
+  const e = getEco(o); const isChar = !o.kind; const hexes = hexesFor(o.speed || o.data?.speed || 30);
+  const cunning = what.startsWith('scaltra-');
+  if (cunning) { if (!isRogue(o)) throw new Error('Solo il Ladro ha l\'Azione scaltra.'); if (e.bo) throw new Error(noSlot(o, true)); }
+  else if (e.az) throw new Error(noSlot(o));
+  const cost = n => (cunning ? { bo: n } : { az: n });
+  const kind = what.replace('scaltra-', '');
+  if (kind === 'scatto') {
+    await saveEco(store, o, cost(cunning ? 'Azione scaltra: scatto' : 'Scatto'));
+    if (isChar) await update(store, 'characters', o.id, { move_left: o.move_left + hexes });
+    return say(store, o.name, 'event', `${o.name} scatta${cunning ? ' (azione scaltra)' : ''}: movimento raddoppiato${isChar ? ` (+${hexes} esagoni)` : ''}.`);
+  }
+  if (kind === 'schiva') {
+    await saveEco(store, o, { ...cost('Schivare'), schiva: 1 });
+    return say(store, o.name, 'event', `${o.name} si mette sulla difensiva: chi lo attacca ha svantaggio e i suoi tiri salvezza di Destrezza hanno vantaggio fino al prossimo round.`);
+  }
+  if (kind === 'disimp') {
+    await saveEco(store, o, { ...cost(cunning ? 'Azione scaltra: disimpegno' : 'Disimpegno'), disimp: 1 });
+    return say(store, o.name, 'event', `${o.name} si disimpegna: i suoi movimenti non provocano attacchi di opportunità.`);
+  }
+  if (kind === 'aiuto') {
+    if (!ally) throw new Error('Scegli chi vuoi aiutare.');
+    await saveEco(store, o, cost('Aiuto')); await saveEco(store, ally, { aiuto: 1 });
+    return say(store, o.name, 'event', `${o.name} aiuta ${ally.name}: il suo prossimo attacco avrà vantaggio.`);
+  }
+  throw new Error('Azione sconosciuta.');
+}
 /** Sposta il PG, attraversa porte sbloccate, innesca trappole, cerca trappole nascoste. */
 export async function moveCharacter(store, ch, room, hex, cost) {
-  const left = Math.max(0, ch.move_left - cost);
+  let left = Math.max(0, ch.move_left - cost);
+  // incidente di movimento: 1 naturale su un d20 e il PG perde il resto del movimento
+  const mishap = MOVE_MISHAPS && rollD20(0).fumble;
+  if (mishap) left = 0;
+  await opportunityOnLeave(store, room, ch, { col: ch.col, row: ch.row }, hex);
+  if (ch.hp <= 0) return; // a terra: non si muove
   const door = store.entities.find(e => e.room_id === room.id && e.kind === 'door' && e.col === hex.col && e.row === hex.row);
   if (door && !door.data.locked && door.data.target_room) {
     await update(store, 'characters', ch.id, { room_id: door.data.target_room, col: door.data.tcol ?? 1, row: door.data.trow ?? 1, move_left: left });
     markVisited(store, door.data.target_room);
-    return say(store, ch.name, 'event', `${ch.name} attraversa «${door.name}».`);
+    return say(store, ch.name, 'event', `${ch.name} attraversa «${door.name}».` + (mishap ? ' ' + mishapFlavor(ch.name) : ''));
   }
   await update(store, 'characters', ch.id, { col: hex.col, row: hex.row, move_left: left });
+  if (mishap) say(store, ch.name, 'event', `${mishapFlavor(ch.name)} (d20: 1, movimento terminato)`);
   const trap = store.entities.find(e => e.room_id === room.id && e.kind === 'trap' && e.data.armed !== false && e.col === hex.col && e.row === hex.row);
   if (trap) await triggerTrap(store, ch, trap);
   await detectTraps(store, ch, room);
@@ -201,6 +287,8 @@ export async function lootEntity(store, ch, ent) {
 
 export async function useItem(store, ch, idx) {
   const it = (ch.data.oggetti || [])[idx]; if (!it?.cura) throw new Error('Questo oggetto non si può usare così.');
+  if (getEco(ch).az) throw new Error(noSlot(ch));
+  await saveEco(store, ch, { az: 'Usare un oggetto' });
   const d = roll(it.cura); const hp = Math.min(ch.max_hp, ch.hp + d.total);
   const rest = ch.data.oggetti.filter((_, i) => i !== idx);
   await update(store, 'characters', ch.id, { hp, data: { ...ch.data, oggetti: rest } });

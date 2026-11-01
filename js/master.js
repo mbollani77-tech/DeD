@@ -6,7 +6,8 @@ import { THEME_LIST, LUCI, PROP_LIST, PROPS } from './props.js';
 import { mountDiceTray, roll, rollD20, randInt, pick } from './dice.js';
 import { STATS, STAT_NAME, BESTIARY, TRAPS, mod, hexesFor, fmtMod, crLabel } from './rules.js';
 import { generateRoom, randomProps, randomMonster, randomTreasure, randomTrap, randomQuest, monsterFromPreset, trapFromPreset, itemsToText, parseItems } from './random.js';
-import { monsterAttack, monsterAutoTurn, damageEntity, damageChar, healChar, liveMonsters } from './combat.js';
+import { monsterAttack, monsterAutoTurn, damageEntity, damageChar, healChar, liveMonsters, doAction } from './combat.js';
+import { getEco, resetEco } from './economia.js';
 import { key, dist, neighbors, inBounds } from './hex.js';
 
 /* ---------- sessione ---------- */
@@ -150,8 +151,9 @@ function entityInspector(e) {
   const common = `<button class="btn sm" data-act="ent-edit">Modifica</button><button class="btn sm" data-act="ent-reveal">${e.hidden ? 'Rivela' : 'Nascondi'}</button><button class="btn sm" data-act="ent-move">Sposta</button><button class="btn sm danger" data-act="ent-del">Elimina</button><button class="btn sm ghost" data-act="sel-clear">Chiudi</button>`;
   if (e.kind === 'monster') {
     const pcs = store.characters.filter(c => c.room_id === e.room_id && c.hp > 0);
-    return `<div class="card stack"><h3>${esc(e.name)} ${tags}</h3><dl class="kv"><dt>PF</dt><dd>${d.hp}/${d.maxHp}</dd><dt>CA</dt><dd>${d.ac}</dd><dt>Movimento</dt><dd>${d.speed} ft (${hexesFor(d.speed)} esagoni)</dd><dt>Attacco</dt><dd>${fmtMod(d.atk || 0)}, ${esc(d.dado)}, ${d.gittata} ft (${hexesFor(d.gittata)} esagoni)</dd>${d.loot ? `<dt>Bottino</dt><dd>${d.loot.oro || 0} mo${(d.loot.oggetti || []).length ? ', ' + d.loot.oggetti.map(o => esc(o.nome)).join(', ') : ''}</dd>` : ''}</dl>
+    return `<div class="card stack"><h3>${esc(e.name)} ${tags}</h3><dl class="kv"><dt>PF</dt><dd>${d.hp}/${d.maxHp}</dd><dt>CA</dt><dd>${d.ac}</dd><dt>Movimento</dt><dd>${d.speed} ft (${hexesFor(d.speed)} esagoni)</dd><dt>Attacco</dt><dd>${fmtMod(d.atk || 0)}, ${esc(d.dado)}, ${d.gittata} ft (${hexesFor(d.gittata)} esagoni)</dd><dt>Round</dt><dd>${(() => { const x = getEco(e); return `azione ${x.az ? 'usata (' + esc(x.az) + ')' : 'libera'}, reazione ${x.re ? 'usata' : 'libera'}${x.schiva ? ', schiva' : ''}${x.disimp ? ', disimpegno' : ''}`; })()}</dd>${d.loot ? `<dt>Bottino</dt><dd>${d.loot.oro || 0} mo${(d.loot.oggetti || []).length ? ', ' + d.loot.oggetti.map(o => esc(o.nome)).join(', ') : ''}</dd>` : ''}</dl>
     <div class="btnrow"><button class="btn sm" data-act="mon-hp">Danni o cura…</button><button class="btn sm primary" data-act="mon-turn" ${d.dead ? 'disabled' : ''}>Turno automatico</button></div>
+    <div class="btnrow">${['scatto:Scatta', 'schiva:Schiva', 'disimp:Disimpegnati'].map(x => { const [w, l] = x.split(':'); return `<button class="btn sm" data-act="mon-act" data-w="${w}" ${d.dead || getEco(e).az ? 'disabled' : ''}>${l}</button>`; }).join('')}</div>
     ${pcs.length && !d.dead ? `<div class="inline"><div class="fld"><label for="insp-target">Attacca</label><select id="insp-target">${pcs.map(c => `<option value="${c.id}">${esc(c.name)} (a ${dist(e, c)} esagoni)</option>`).join('')}</select></div><button class="btn sm" data-act="mon-atk">Attacca</button></div>` : ''}
     <div class="btnrow">${common}</div></div>`;
   }
@@ -369,7 +371,7 @@ async function rollInit() {
   await setCampaignState(store, { init: list, turn: 0, round: 1 });
   say(store, 'Master', 'event', `Iniziativa: ${list.map(i => `${i.name} ${i.roll}`).join(', ')}.`);
 }
-async function resetMoves() { for (const c of store.characters) { const m = hexesFor(c.speed); if (c.move_left !== m) await update(store, 'characters', c.id, { move_left: m }); } }
+async function resetMoves() { for (const c of store.characters) { const m = hexesFor(c.speed); if (c.move_left !== m) await update(store, 'characters', c.id, { move_left: m }); } await resetEco(store); }
 async function nextTurn() {
   const st = store.campaign.state || {}; const init = st.init || [];
   if (!init.length) return toast('Tira prima l\'iniziativa.', 'err');
@@ -462,6 +464,7 @@ const acts = {
     else await update(store, 'entities', e.id, { data: { ...e.data, hp: Math.min(e.data.maxHp, e.data.hp + v.n), dead: false } });
   },
   'mon-turn': () => monsterAutoTurn(store, room(), selEnt()),
+  'mon-act': d => doAction(store, selEnt(), d.w),
   'mon-atk': async () => { const c = store.characters.find(x => x.id === $('#insp-target')?.value); if (c) await monsterAttack(store, selEnt(), c); },
 
   'char-sel': d => { S.sel = { kind: 'char', id: d.id }; const c = store.characters.find(x => x.id === d.id); if (c?.room_id) S.roomId = c.room_id; render(); },

@@ -4,7 +4,8 @@ import { createView } from './view.js';
 import { openDungeonMap } from './dungeonmap.js';
 import { mountDiceTray, roll, rollDie } from './dice.js';
 import { STATS, STAT_NAME, RACES, CLASSES, WEAPONS, SPELLS, mod, prof, fmtMod, hexesFor } from './rules.js';
-import { weaponAttack, castSpell, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters, markVisited } from './combat.js';
+import { weaponAttack, castSpell, opportunityAttack, doAction, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters, markVisited } from './combat.js';
+import { getEco, weaponSlot, spellSlot, isRogue } from './economia.js';
 import { key, dist, neighbors, inBounds, reachable, hexesWithin, los } from './hex.js';
 
 const fatal = msg => { document.body.innerHTML = `<div class="fatal"><h2>Non riesco ad aprire la campagna</h2><p>${esc(msg)}</p><a class="btn primary" href="index.html">Torna all'inizio</a></div>`; };
@@ -33,13 +34,18 @@ const board = createView({ svg: $('#board'), host3d: $('#board3d'), handlers: {
       if (trap && !(await confirmBox(`Lì c'è una trappola nota: «${trap.name}». Vuoi davvero metterci piede?`, 'Vai lo stesso'))) return;
       return busy(() => moveCharacter(store, ch, r, { col, row }, cost));
     }
+    if (S.mode.t === 'reaz') {
+      const t = liveMonsters(store, r.id).find(e => !e.hidden && e.col === col && e.row === row);
+      if (!t || !S.hl.get(k)) return toast('Scegli un mostro adiacente.');
+      return busy(async () => { await opportunityAttack(store, ch, t); S.mode = { t: 'move' }; });
+    }
     const a = currentAction(ch); if (!a) return;
     if (!S.hl.get(k)) return toast('Fuori portata, oppure un muro blocca la vista.');
     return busy(async () => {
       if (a.kind === 'weapon') {
         const t = liveMonsters(store, r.id).find(e => !e.hidden && e.col === col && e.row === row);
         if (!t) return toast('Lì non c\'è nessun mostro.');
-        await weaponAttack(store, ch, a.item, t, S.adv || null);
+        await weaponAttack(store, ch, a.item, t, S.adv || null, { i: S.mode.i });
       } else await castSpell(store, ch, a.item, { col, row }, r, S.adv || null);
     });
   },
@@ -59,6 +65,10 @@ function computeHL(ch, r) {
   if (S.mode.t === 'move') {
     S.reach = reachable(r, from, ch.move_left, blockedSet(store, r, { exceptChar: ch.id }));
     S.reach.forEach((_, k) => S.hl.set(k, 'move'));
+    return;
+  }
+  if (S.mode.t === 'reaz') {
+    for (const m of liveMonsters(store, r.id)) if (!m.hidden && dist(from, m) <= 1) S.hl.set(key(m.col, m.row), 'atk');
     return;
   }
   const a = currentAction(ch); if (!a) { S.mode = { t: 'move' }; return computeHL(ch, r); }
@@ -116,15 +126,26 @@ function renderBoard(ch, r) {
 }
 function renderActionbar(ch) {
   const el = $('#actionbar'); el.hidden = false;
-  const m = S.mode; const b = (cls, on, attrs, label) => `<button class="btn ${cls} ${on ? 'on' : ''}" data-act="mode" ${attrs}>${label}</button>`;
-  el.innerHTML = b('', m.t === 'move', 'data-t="move"', `Muovi (${ch.move_left}/${hexesFor(ch.speed)})`)
-    + (ch.data.armi || []).map((w, i) => b('weapon', m.t === 'weapon' && m.i === i, `data-t="weapon" data-i="${i}"`, `${esc(w.nome)} ${esc(w.dado)}`)).join('')
-    + (ch.data.magie || []).map((s, i) => b('spell', m.t === 'spell' && m.i === i, `data-t="spell" data-i="${i}"`, esc(s.nome))).join('')
+  const m = S.mode; const e = getEco(ch);
+  const b = (cls, on, attrs, label, off = false) => `<button class="btn ${cls} ${on ? 'on' : ''}" data-act="mode" ${attrs} ${off ? 'disabled' : ''}>${label}</button>`;
+  const act = (w, label, off, title = '') => `<button class="btn" data-act="act" data-w="${w}" ${off ? 'disabled' : ''} title="${esc(title)}">${label}</button>`;
+  const slotTag = s => ({ extra: ' (attacco extra)', bonus: ' (bonus)' }[s] || '');
+  const eco = `<span class="chip ${e.az ? 'red' : ''}" title="${esc(e.az || 'libera')}">Azione ${e.az ? 'usata' : 'libera'}${e.atk > 0 ? ` +${e.atk} att.` : ''}</span><span class="chip ${e.bo ? 'red' : ''}" title="${esc(e.bo || 'libera')}">Bonus ${e.bo ? 'usato' : 'libero'}</span><span class="chip ${e.re ? 'red' : ''}" title="${esc(e.re || 'libera')}">Reazione ${e.re ? 'usata' : 'libera'}</span>${e.schiva ? '<span class="chip">Schivata</span>' : ''}${e.disimp ? '<span class="chip">Disimpegno</span>' : ''}${e.aiuto ? '<span class="chip gold">Aiutato</span>' : ''}`;
+  el.innerHTML = eco + b('', m.t === 'move', 'data-t="move"', `Muovi (${ch.move_left}/${hexesFor(ch.speed)})`)
+    + (ch.data.armi || []).map((w, i) => { const sl = weaponSlot(ch, w, i); return b('weapon', m.t === 'weapon' && m.i === i, `data-t="weapon" data-i="${i}"`, `${esc(w.nome)} ${esc(w.dado)}${slotTag(sl)}`, !sl); }).join('')
+    + (ch.data.magie || []).map((s, i) => { const sl = spellSlot(ch, s); return b('spell', m.t === 'spell' && m.i === i, `data-t="spell" data-i="${i}"`, esc(s.nome) + slotTag(sl), !sl); }).join('')
+    + act('scatto', 'Scatta', e.az, 'Azione: raddoppia il movimento del round')
+    + act('schiva', 'Schiva', e.az, 'Azione: svantaggio a chi ti attacca, vantaggio ai tiri salvezza di Destrezza')
+    + act('disimp', 'Disimpegnati', e.az, 'Azione: ti muovi senza subire attacchi di opportunità')
+    + act('aiuto', 'Aiuta', e.az, 'Azione: il prossimo attacco di un compagno ha vantaggio')
+    + (isRogue(ch) ? act('scaltra-scatto', 'Scaltra: scatta', e.bo, 'Azione bonus del Ladro') + act('scaltra-disimp', 'Scaltra: disimpegnati', e.bo, 'Azione bonus del Ladro') : '')
+    + b('', m.t === 'reaz', 'data-t="reaz"', 'Reazione: attacco di opportunità', !!e.re)
     + `<select data-pick="adv" aria-label="Vantaggio o svantaggio"><option value="" ${!S.adv ? 'selected' : ''}>Tiro normale</option><option value="adv" ${S.adv === 'adv' ? 'selected' : ''}>Vantaggio</option><option value="dis" ${S.adv === 'dis' ? 'selected' : ''}>Svantaggio</option></select>`;
 }
 function renderStatus(ch, r) {
   const a = currentAction(ch); let t;
   if (ch.hp <= 0) t = 'Sei a terra. Il Master o un alleato può aiutarti.';
+  else if (S.mode.t === 'reaz') t = 'Reazione: clicca un mostro adiacente per l\'attacco di opportunità (arma da mischia migliore).';
   else if (S.mode.t === 'move') t = `Muovi: ${ch.move_left} esagoni disponibili (${ch.move_left * 5} ft). Il terreno difficile e l'acqua costano doppio.`;
   else if (a?.item.tipo === 'cura') t = `${a.item.nome}: gittata ${hexesFor(a.item.gittata)} esagoni. Clicca un alleato evidenziato.`;
   else if (a?.item.area) t = `${a.item.nome}: gittata ${hexesFor(a.item.gittata)} esagoni, raggio ${hexesFor(a.item.area)}. Clicca il centro dell'esplosione.`;
@@ -272,6 +293,16 @@ const acts = {
   'switch-char': () => { S.meId = null; localStorage.removeItem('dnd.char.' + cid); render(); },
   tab: d => { S.tab = d.t; render(); },
   mode: d => { S.mode = d.t === 'move' ? { t: 'move' } : { t: d.t, i: +d.i }; render(); },
+  act: d => busy(async () => {
+    const ch = me(); let ally = null;
+    if (d.w === 'aiuto') {
+      const mates = store.characters.filter(c => c.room_id === ch.room_id && c.id !== ch.id && c.hp > 0);
+      if (!mates.length) throw new Error('Non c\'è nessun compagno vicino da aiutare.');
+      const v = await ask({ title: 'Aiuta un compagno', fields: [{ name: 'who', label: 'Chi aiuti?', type: 'select', value: mates[0].id, options: mates.map(c => ({ v: c.id, l: c.name })) }] });
+      if (!v) return; ally = mates.find(c => c.id === v.who);
+    }
+    await doAction(store, ch, d.w, ally);
+  }),
   'zoom-in': () => board.zoom(0.8), 'zoom-out': () => board.zoom(1.25), fit: () => board.fit(),
   view: async () => { await board.set(board.mode === '2d' ? '3d' : '2d'); render(); },
   dmap: () => openDungeonMap({ store, role: 'player', currentRoomId: me()?.room_id }),
