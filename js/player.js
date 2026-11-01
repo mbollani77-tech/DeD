@@ -116,7 +116,8 @@ function renderTop(ch) {
 }
 function renderToolbar(r) { const t = $('#toolbar'); t.innerHTML = r ? `<strong style="color:#e8efec">${esc(r.name)}</strong>` : ''; t.hidden = !r; }
 function renderInit(ch) {
-  const st = store.campaign.state || {}; const list = st.init || []; const el = $('#init'); el.hidden = !list.length; if (!list.length) return;
+  const st = store.campaign.state || {}; const list = st.init || []; const el = $('#init'); el.hidden = false;
+  if (!list.length) { el.innerHTML = '<span class="turn idle"><i></i><span>Nessuno scontro in corso</span></span><span class="rd">Muoviti e agisci liberamente: il Master tira l\'iniziativa quando inizia il combattimento.</span>'; S.lastTurn = null; return; }
   const cur = list[st.turn || 0]; const mine = cur?.id === ch.id; const mon = cur?.k === 'e';
   el.innerHTML = `<span class="turn ${mine ? 'mine' : mon ? 'mon' : 'pc'}"><i></i><span>${mine ? '<b>Tocca a te!</b>' : `Tocca a <b>${esc(cur?.name || '')}</b> <small>${mon ? 'mostro' : 'giocatore'}</small>`}</span></span><b class="rd">Round ${st.round || 1}</b>`
     + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''} ${i.k === 'e' ? 'm' : ''}">${esc(i.name)} ${i.roll}${i.id === ch.id ? ' (tu)' : ''}</span>`).join('');
@@ -174,7 +175,7 @@ function tabScheda(ch) {
   <div class="abilities">${STATS.map(ab).join('')}</div>
   ${cast ? `<p class="castline">Magia: ${STAT_NAME[cast]} · CD ${8 + pb + mod(ch.stats[cast])}</p>` : ''}
   ${ch.data.note ? `<div class="card"><strong>Note</strong><p>${esc(ch.data.note)}</p></div>` : ''}
-  <div class="btnrow"><button class="btn sm" data-act="char-edit">Modifica scheda</button></div></div>`;
+  </div>`;
 }
 function tabArmi(ch) {
   const pb = prof(ch.level); const cm = mod(ch.stats[ch.data.cast || 'int']);
@@ -324,18 +325,6 @@ const acts = {
   'add-spell': async () => { const s = await spellDialog(); if (s) { const ch = me(); await update(store, 'characters', ch.id, { data: { ...ch.data, magie: [...(ch.data.magie || []), s] } }); } },
   'del-weapon': async d => { const ch = me(); S.mode = { t: 'move' }; await update(store, 'characters', ch.id, { data: { ...ch.data, armi: ch.data.armi.filter((_, i) => i !== +d.i) } }); },
   'del-spell': async d => { const ch = me(); S.mode = { t: 'move' }; await update(store, 'characters', ch.id, { data: { ...ch.data, magie: ch.data.magie.filter((_, i) => i !== +d.i) } }); },
-  'char-edit': async () => {
-    const ch = me();
-    const v = await ask({ title: 'Modifica scheda', wide: true, fields: [
-      { name: 'name', label: 'Nome', value: ch.name, required: true }, { name: 'player', label: 'Giocatore', value: ch.player },
-      { name: 'level', label: 'Livello', type: 'number', value: ch.level, min: 1, max: 20 }, { name: 'ac', label: 'Classe armatura', type: 'number', value: ch.ac },
-      { name: 'hp', label: 'PF attuali', type: 'number', value: ch.hp, min: 0 }, { name: 'max_hp', label: 'PF massimi', type: 'number', value: ch.max_hp, min: 1 },
-      { name: 'cast', label: 'Caratteristica magica', type: 'select', value: ch.data.cast || 'int', options: STATS.map(([k, l]) => ({ v: k, l })) },
-      { name: 'note', label: 'Note', type: 'textarea', value: ch.data.note || '' },
-    ] });
-    if (!v) return;
-    await update(store, 'characters', ch.id, { name: v.name.trim(), player: v.player, level: v.level ?? ch.level, ac: v.ac ?? ch.ac, max_hp: v.max_hp ?? ch.max_hp, hp: Math.min(v.hp ?? ch.hp, v.max_hp ?? ch.max_hp), data: { ...ch.data, cast: v.cast, note: v.note } });
-  },
 };
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;

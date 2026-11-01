@@ -83,7 +83,8 @@ function renderToolbar() {
 
 function renderInit() {
   const st = store.campaign.state || {}; const el = $('#init'); const list = st.init || [];
-  el.hidden = !list.length; if (!list.length) return;
+  el.hidden = false;
+  if (!list.length) { el.innerHTML = '<span class="turn idle"><i></i><span>Nessuno scontro in corso</span></span><span class="rd">Tira l\'iniziativa per far partire i turni.</span><button class="btn sm nextturn" data-act="init-roll">Tira iniziativa</button>'; return; }
   const cur = list[st.turn || 0]; const mon = cur?.k === 'e';
   el.innerHTML = `<span class="turn ${mon ? 'mon' : 'pc'}"><i></i><span>Tocca a <b>${esc(cur?.name || '')}</b> <small>${mon ? 'mostro' : 'giocatore'}</small></span></span><b class="rd">Round ${st.round || 1}</b>`
     + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''} ${i.k === 'e' ? 'm' : ''}">${esc(i.name)} ${i.roll}</span>`).join('')

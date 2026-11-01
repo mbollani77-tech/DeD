@@ -279,3 +279,5 @@ button.row .muted { grid-column: 1; font-size: .88rem; } button.row .chip { grid
 .tok circle.turnring { fill: none !important; stroke: #f4d58d !important; stroke-width: 3.2 !important; stroke-dasharray: 7 5; transform-box: fill-box; transform-origin: center; animation: tspin 7s linear infinite; filter: drop-shadow(0 0 4px #f4d58d); pointer-events: none; }
 @keyframes tspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .initstrip .turn i, .tok circle.turnring { animation: none; } }
+
+.initstrip .turn.idle { background: #ffffff12; border-color: #ffffff2a; color: #cfdcd7; } .initstrip .turn.idle i { background: #8fa3ad; animation: none; }
