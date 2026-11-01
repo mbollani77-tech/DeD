@@ -8,7 +8,7 @@ import { pick } from './dice.js';
 import { defaultSkills } from './skills.js';
 
 export const MAX_COMPANIONS = 2;
-const NAMES = ['Bruno', 'Elsa', 'Garin', 'Mira', 'Tobias', 'Selene', 'Ragnar', 'Ilda', 'Corvo', 'Liora', 'Dante', 'Nera', 'Fenrir', 'Alda', 'Orso', 'Vesper', 'Kael', 'Brina', 'Tullio', 'Zora'];
+const NAMES = { m: ['Bruno', 'Garin', 'Tobias', 'Ragnar', 'Corvo', 'Dante', 'Fenrir', 'Orso', 'Tullio', 'Edoardo'], f: ['Elsa', 'Mira', 'Selene', 'Ilda', 'Liora', 'Nera', 'Alda', 'Brina', 'Zora', 'Marta'], n: ['Vesper', 'Kael', 'Rowan', 'Sasha', 'Ash', 'Noa'] };
 export const PRIORITY = { guerriero: ['for', 'cos', 'des', 'sag', 'car', 'int'], barbaro: ['for', 'cos', 'des', 'sag', 'car', 'int'], paladino: ['for', 'car', 'cos', 'sag', 'des', 'int'], ranger: ['des', 'sag', 'cos', 'for', 'int', 'car'],
   ladro: ['des', 'int', 'car', 'cos', 'sag', 'for'], monaco: ['des', 'sag', 'cos', 'for', 'int', 'car'], chierico: ['sag', 'cos', 'for', 'car', 'des', 'int'], druido: ['sag', 'cos', 'des', 'int', 'car', 'for'],
   bardo: ['car', 'des', 'cos', 'int', 'sag', 'for'], mago: ['int', 'cos', 'des', 'sag', 'car', 'for'], stregone: ['car', 'cos', 'des', 'sag', 'int', 'for'], warlock: ['car', 'cos', 'des', 'sag', 'int', 'for'] };
@@ -26,7 +26,8 @@ function spend(stats, classId, points) {
 /** Un avventuriero casuale (solo i dati essenziali: la scheda si costruisce quando si arruola). */
 export function makeCandidate(level = 1, classId = null) {
   const cls = classId ? CLASSES.find(c => c.id === classId) : pick(CLASSES);
-  return { name: pick(NAMES), raceId: pick(RACES).id, classId: cls.id, level: Math.max(1, Math.min(10, level)) };
+  const genere = pick(['m', 'm', 'f', 'f', 'n']);
+  return { name: pick(NAMES[genere]), genere, raceId: pick(RACES).id, classId: cls.id, level: Math.max(1, Math.min(10, level)) };
 }
 
 /** Scheda completa a partire da razza, classe, livello e (se già tirate) le caratteristiche di base. Serve sia ai giocatori sia ai compagni. */
@@ -44,7 +45,7 @@ export function buildSheet(cand) {
     for (let i = 0, n = Math.floor((level - 1) / 2); i < n && extra.length; i++) magie.push({ ...extra.splice(Math.floor(Math.random() * extra.length), 1)[0] });
   }
   return { name: cand.name, race: race.nome, class: cls.nome, level, stats, hp: maxHp, max_hp: maxHp, ac: cls.ac(m), speed: race.speed, move_left: Math.max(1, Math.round(race.speed / 5)),
-    data: { raceId: race.id, classId: cls.id, cast: cls.cast || 'int', abilita: defaultSkills(race.id, cls.id), oro: 0, xp: XP_AT[level] ?? 0, punti: 0, oggetti: [{ nome: 'Pozione di cura', desc: 'Recupera 2d4+2 punti ferita.', cura: '2d4+2' }],
+    data: { raceId: race.id, classId: cls.id, genere: cand.genere || 'n', cast: cls.cast || 'int', abilita: defaultSkills(race.id, cls.id), oro: 0, xp: XP_AT[level] ?? 0, punti: 0, oggetti: [{ nome: 'Pozione di cura', desc: 'Recupera 2d4+2 punti ferita.', cura: '2d4+2' }],
       armi: cls.armi.map(id => ({ ...WEAPONS.find(w => w.id === id) })), magie } };
 }
 

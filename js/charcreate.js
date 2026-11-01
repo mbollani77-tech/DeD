@@ -5,6 +5,7 @@ import { PRIORITY, buildSheet } from './companions.js';
 import { RACE_TRAITS, CLASS_FEATURES, SKILLS, defaultSkills, racialBonus } from './skills.js';
 import { powerFor } from './powers.js';
 import { defenseList } from './status.js';
+import { portrait, GENERI, GENERE_ICONA } from './portrait.js';
 import { play } from './sound.js';
 import { esc } from './ui.js';
 
@@ -25,7 +26,7 @@ const rollSet = () => Array.from({ length: 6 }, () => Math.max(8, roll('4d6kh3')
 /** Apre la finestra. Restituisce { player, name, raceId, classId, base, level } oppure null. */
 export function characterDialog({ saved = '', level = 1 } = {}) {
   return new Promise(resolve => {
-    const S = { raceId: 'umano', classId: 'guerriero', rolls: [], pick: -1, rolling: false };
+    const S = { raceId: 'umano', classId: 'guerriero', genere: 'n', rolls: [], pick: -1, rolling: false };
     const dlg = document.createElement('dialog'); dlg.className = 'dlg wide cc'; document.body.appendChild(dlg);
     let result = null;
     const race = () => RACES.find(r => r.id === S.raceId), cls = () => CLASSES.find(c => c.id === S.classId);
@@ -35,13 +36,14 @@ export function characterDialog({ saved = '', level = 1 } = {}) {
 
     const preview = () => {
       const base = baseOf(); const r = race(), c = cls();
-      if (!base) return `<div class="cc-need"><p><b>${esc(r.nome)} ${esc(c.nome)}</b> — ${esc(WHY[S.classId])}</p><div class="cc-stats">${PRIORITY[S.classId].map(k => `<div class="cc-st r-${roleOf(S.classId, k) || 'none'} ${racialBonus(S.raceId, k) ? 'has-bonus' : ''}"><span>${STAT_NAME[k].slice(0, 3).toUpperCase()}</span><b>?</b><em>${ROLE_TXT[roleOf(S.classId, k)] || ''}</em><i>${racialBonus(S.raceId, k) ? `razza <u>+${racialBonus(S.raceId, k)}</u>` : ''}</i></div>`).join('')}</div><p class="muted">Tira i dadi: i numeri più alti andranno alle caratteristiche che servono alla tua classe, e i bonus della razza si sommano. Poi vedrai armi, magie, abilità e talenti.</p></div>`;
+      const por = `<div class="cc-por">${portrait({ raceId: S.raceId, classId: S.classId, genere: S.genere, seed: S.name || '' })}</div>`;
+      if (!base) return `<div class="cc-need"><div class="cc-top">${por}<p><b>${esc(r.nome)} ${esc(c.nome)}</b> (${GENERE_ICONA[S.genere]} ${GENERI[S.genere]}) — ${esc(WHY[S.classId])}</p></div><div class="cc-stats">${PRIORITY[S.classId].map(k => `<div class="cc-st r-${roleOf(S.classId, k) || 'none'} ${racialBonus(S.raceId, k) ? 'has-bonus' : ''}"><span>${STAT_NAME[k].slice(0, 3).toUpperCase()}</span><b>?</b><em>${ROLE_TXT[roleOf(S.classId, k)] || ''}</em><i>${racialBonus(S.raceId, k) ? `razza <u>+${racialBonus(S.raceId, k)}</u>` : ''}</i></div>`).join('')}</div><p class="muted">Tira i dadi: i numeri più alti andranno alle caratteristiche che servono alla tua classe, e i bonus della razza si sommano. Poi vedrai armi, magie, abilità e talenti.</p></div>`;
       const sh = buildSheet({ name: 'x', raceId: S.raceId, classId: S.classId, level, base });
       const tiles = STATS.map(([k, l]) => { const b = racialBonus(S.raceId, k); const tot = sh.stats[k]; const role = roleOf(S.classId, k); return `<div class="cc-st ${b ? 'has-bonus' : ''} r-${role || 'none'}" title="${l}: tiro ${base[k]}${b ? ` + razza ${b}` : ''}"><span>${l.slice(0, 3).toUpperCase()}</span><b>${tot}</b><small>${fmtMod(mod(tot))}</small><em>${ROLE_TXT[role] || ''}</em><i>${base[k]}${b ? ` <u>+${b}</u>` : ''}</i></div>`; }).join('');
       const abil = defaultSkills(S.raceId, S.classId); const raceSk = new Set(defaultSkills(S.raceId, 'x'));
       const chip = id => { const s = SKILLS.find(x => x.id === id); const bonus = mod(sh.stats[s.stat]) + prof(level); return `<span class="cc-chip ${raceSk.has(id) ? 'race' : 'cls'}" title="${raceSk.has(id) ? 'Dalla razza' : 'Dalla classe'}">${esc(s.nome)} ${fmtMod(bonus)}</span>`; };
       const traits = [...(RACE_TRAITS[S.raceId] || []).map(t => ['race', ...t]), ...(CLASS_FEATURES[S.classId] || []).map(t => ['cls', ...t])];
-      return `<p class="cc-why"><b>${esc(c.nome)}</b>: ${esc(WHY[S.classId])} Le caselle evidenziate sono quelle che contano di più.</p><div class="cc-stats">${tiles}</div>
+      return `<div class="cc-top">${por}<p class="cc-why"><b>${esc(S.name || 'Il tuo eroe')}</b>, ${esc(r.nome)} ${esc(c.nome)} (${GENERE_ICONA[S.genere]} ${GENERI[S.genere]})<br><b>${esc(c.nome)}</b>: ${esc(WHY[S.classId])} Le caselle evidenziate sono quelle che contano di più.</p></div><div class="cc-stats">${tiles}</div>
         <div class="cc-vit"><span><b>${sh.max_hp}</b> PF</span><span><b>${sh.ac}</b> CA</span><span><b>${hexesFor(sh.speed)}</b> esagoni</span><span><b>${fmtMod(prof(level))}</b> competenza</span>${maxMana(sh) ? `<span class="mn"><b>${maxMana(sh)}</b> mana</span>` : ''}</div>
         <div class="cc-cols"><div><h4>Armi</h4><ul>${sh.data.armi.map(w => `<li><b>${esc(w.nome)}</b> <span class="muted">${esc(w.dado)}${w.gittata > 5 ? `, gittata ${w.gittata} ft` : ''}</span></li>`).join('') || '<li class="muted">nessuna</li>'}</ul></div>
           <div><h4>${sh.data.magie.length ? 'Magie' : 'Magie'}</h4><ul>${sh.data.magie.map(m => `<li><b>${esc(m.nome)}</b> <span class="muted">${m.livello ? 'livello ' + m.livello : 'trucchetto'} · ${spellCost(m)} mana</span></li>`).join('') || '<li class="muted">la tua classe non lancia incantesimi: punta sulle armi e sulle abilità</li>'}</ul></div></div>
@@ -59,6 +61,7 @@ export function characterDialog({ saved = '', level = 1 } = {}) {
           <div class="fld"><label for="cc-name">Nome del personaggio</label><input id="cc-name" required value="${esc(S.name || '')}" placeholder="Come si chiama il tuo eroe?"></div>
           <div class="fld"><label for="cc-race">Razza</label><select id="cc-race">${RACES.map(r => `<option value="${r.id}" ${r.id === S.raceId ? 'selected' : ''}>${esc(r.nome)} (${r.speed} ft)</option>`).join('')}</select></div>
           <div class="fld"><label for="cc-cls">Classe</label><select id="cc-cls">${CLASSES.map(c => `<option value="${c.id}" ${c.id === S.classId ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select></div></div>
+        <div class="fld"><label>Genere</label><div class="seg" role="group" aria-label="Genere">${Object.entries(GENERI).map(([k, l]) => `<button type="button" class="seg-b ${S.genere === k ? 'on' : ''}" data-gen="${k}" aria-pressed="${S.genere === k}">${GENERE_ICONA[k]} ${l}</button>`).join('')}</div><small class="muted">Cambia solo l'aspetto del ritratto: maschi, femmine e neutri sono alla pari, senza bonus né malus.</small></div>
         <p class="cc-note">${raceNote()}</p>
         <div class="cc-rollrow"><button type="button" class="btn primary" data-roll ${canRoll ? '' : 'disabled'}>${S.rolls.length ? (S.rolls.length >= MAX_ROLLS ? 'Tentativi finiti' : `Tira ancora (${MAX_ROLLS - S.rolls.length} ${MAX_ROLLS - S.rolls.length === 1 ? 'tentativo rimasto' : 'tentativi rimasti'})`) : `Tira i dadi (${MAX_ROLLS} tentativi)`}</button>${S.rolls.length >= MAX_ROLLS ? '<span class="muted">scegli il tiro che preferisci:</span>' : ''}
           ${S.rolls.map((v, i) => `<button type="button" class="cc-chip pickable ${i === S.pick ? 'on' : ''}" data-pick="${i}" title="${v.join(', ')}">Tiro ${i + 1} · somma ${v.reduce((a, b) => a + b, 0)}</button>`).join('')}</div>
@@ -70,6 +73,7 @@ export function characterDialog({ saved = '', level = 1 } = {}) {
     dlg.addEventListener('click', async e => {
       const b = e.target.closest('button'); if (!b) return; keepInputs();
       if (b.dataset.cancel !== undefined) return dlg.close();
+      if (b.dataset.gen) { S.genere = b.dataset.gen; return render(); }
       if (b.dataset.pick !== undefined) { S.pick = +b.dataset.pick; return render(); }
       if (b.dataset.roll !== undefined) {
         const vals = rollSet(); S.rolling = true; render(); play('dice');
@@ -82,7 +86,7 @@ export function characterDialog({ saved = '', level = 1 } = {}) {
       }
       if (b.dataset.ok !== undefined) {
         const name = (S.name || '').trim(); if (!name) { dlg.querySelector('#cc-name').focus(); return dlg.querySelector('#cc-name').reportValidity?.(); }
-        result = { player: (S.player || '').trim(), name, raceId: S.raceId, classId: S.classId, base: baseOf(), level }; dlg.close();
+        result = { player: (S.player || '').trim(), name, genere: S.genere, raceId: S.raceId, classId: S.classId, base: baseOf(), level }; dlg.close();
       }
     });
     dlg.addEventListener('change', e => { keepInputs(); if (e.target.id === 'cc-race') S.raceId = e.target.value; else if (e.target.id === 'cc-cls') S.classId = e.target.value; else return; render(); });

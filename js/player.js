@@ -16,6 +16,7 @@ import { runAutoMonsters, endTurn, skipTurn, partyLevel } from './engine.js';
 import { startAdventure } from './adventure.js';
 import { companionsOf, dismissCompanion, buildSheet, MAX_COMPANIONS } from './companions.js';
 import { characterDialog } from './charcreate.js';
+import { portraitOf, GENERI, GENERE_ICONA } from './portrait.js';
 import { powerFor, powerBlocked, usePower } from './powers.js';
 import { STATI, TIPI, statiOf, defenseList } from './status.js';
 import { skillList, RACE_TRAITS, CLASS_FEATURES, racialBonus, checkBonus } from './skills.js';
@@ -123,13 +124,13 @@ function render() {
 function renderChooser() {
   const list = store.characters.filter(c => !c.data?.companion);
   $('#chooser').innerHTML = `<div class="panelbox"><h2>Chi giochi stasera?</h2><p class="muted">Campagna «${esc(store.campaign.name)}»</p>
-    <ul class="list">${list.map(c => `<li><button class="row" data-act="pick-char" data-id="${c.id}"><strong>${esc(c.name)}</strong><span class="muted">${esc(c.race)} ${esc(c.class)} di livello ${c.level}${c.player ? ', ' + esc(c.player) : ''}</span><span class="chip">${c.hp}/${c.max_hp} PF</span></button></li>`).join('') || '<li class="muted">Nessun personaggio ancora.</li>'}</ul>
+    <ul class="list">${list.map(c => `<li><button class="row" data-act="pick-char" data-id="${c.id}"><strong><span class="mini-por">${portraitOf(c)}</span>${esc(c.name)}</strong><span class="muted">${esc(c.race)} ${esc(c.class)} di livello ${c.level}${c.player ? ', ' + esc(c.player) : ''}</span><span class="chip">${c.hp}/${c.max_hp} PF</span></button></li>`).join('') || '<li class="muted">Nessun personaggio ancora.</li>'}</ul>
     <p></p><button class="btn primary" data-act="new-char">Crea un nuovo personaggio</button> <a class="btn ghost" href="index.html">Esci</a></div>`;
 }
 
 function renderTop(ch) {
   const coop = !!store.campaign.state?.coop;
-  $('#top').innerHTML = `<h1>${esc(store.campaign.name)}</h1><span>${esc(ch.name)}</span><span class="sp"></span>${coop ? `<button class="btn sm" data-act="copy-code" title="Copia il codice da dare agli amici">Codice ${esc(store.campaign.code)}</button>` : ''}<span class="live ${store.status === 'SUBSCRIBED' ? 'ok' : ''}" title="${store.status === 'SUBSCRIBED' ? 'Collegato in tempo reale' : 'Connessione in corso'}"></span><button class="btn sm" data-act="switch-char">Cambia personaggio</button>`;
+  $('#top').innerHTML = `<h1>${esc(store.campaign.name)}</h1><span class="top-por">${portraitOf(ch)}</span><span>${esc(ch.name)}</span><span class="sp"></span>${coop ? `<button class="btn sm" data-act="copy-code" title="Copia il codice da dare agli amici">Codice ${esc(store.campaign.code)}</button>` : ''}<span class="live ${store.status === 'SUBSCRIBED' ? 'ok' : ''}" title="${store.status === 'SUBSCRIBED' ? 'Collegato in tempo reale' : 'Connessione in corso'}"></span><button class="btn sm" data-act="switch-char">Cambia personaggio</button>`;
 }
 function renderToolbar(r) { const t = $('#toolbar'); t.innerHTML = r ? `<strong style="color:#e8efec">${esc(r.name)}</strong>` : ''; t.hidden = !r; }
 function renderInit(ch) {
@@ -191,7 +192,7 @@ const meter = (hp, max) => `<div class="meter ${hp / max < 0.34 ? 'low' : ''}" r
 function tabScheda(ch) {
   const cast = ch.data.cast; const pb = prof(ch.level);
   const ab = ([k, l]) => { const mm = mod(ch.stats[k]); const rb = racialBonus(ch.data.raceId, k); return `<div class="ab ${rb ? 'rb' : ''}" title="${l} ${ch.stats[k]}${rb ? ` (di cui +${rb} dalla razza)` : ''}"><span>${l.slice(0, 3).toUpperCase()}${rb ? `<u>+${rb}</u>` : ''}</span><b class="${mm < 0 ? 'neg' : ''}">${fmtMod(mm)}</b><small>${ch.stats[k]}</small></div>`; };
-  return `<div class="sheet"><div class="sheet-head"><h2>${esc(ch.name)}</h2><p class="muted">${esc(ch.race)} ${esc(ch.class)} · livello ${ch.level}${ch.player ? ` · ${esc(ch.player)}` : ''}</p></div>
+  return `<div class="sheet"><div class="sheet-head"><div class="sheet-por">${portraitOf(ch)}</div><div><h2>${esc(ch.name)}</h2><p class="muted">${esc(ch.race)} ${esc(ch.class)} · livello ${ch.level}${ch.player ? ` · ${esc(ch.player)}` : ''}</p>${ch.data.genere ? `<p class="muted">${GENERE_ICONA[ch.data.genere]} ${GENERI[ch.data.genere]}</p>` : `<p class="muted">Genere: <span class="seg">${Object.entries(GENERI).map(([k, l]) => `<button type="button" class="seg-b" data-act="set-genere" data-g="${k}">${GENERE_ICONA[k]} ${l}</button>`).join('')}</span></p>`}</div></div>
   <div class="hp"><span>PF</span>${meter(ch.hp, ch.max_hp)}<em>${ch.hp} / ${ch.max_hp}</em></div>
   ${maxMana(ch) ? `<div class="hp mana"><span>Mana</span><div class="manameter"><i style="width:${Math.round(manaOf(ch) / maxMana(ch) * 100)}%"></i></div><em>${manaOf(ch)} / ${maxMana(ch)}</em></div>` : ''}
   ${(() => { const st = statiOf(ch); return st.length ? `<div class="statuses">${st.map(s => { const d = STATI[s.id]; return `<span class="status" title="${esc(d.desc + (d.cura ? ' Cura: ' + d.cura + '.' : ''))}">${d.icona} ${esc(d.nome)}${s.id === 'resistenza' ? ' al ' + esc((TIPI[s.tipo] || [''])[0].toLowerCase()) : ''}<small>${s.turni >= 99 ? 'finché non guarisci' : s.turni + (s.turni === 1 ? ' turno' : ' turni')}</small></span>`; }).join('')}</div>` : ''; })()}
@@ -202,7 +203,7 @@ function tabScheda(ch) {
   ${(() => { const t = [...(RACE_TRAITS[ch.data.raceId] || []).map(x => ['race', ...x]), ...(CLASS_FEATURES[ch.data.classId] || []).map(x => ['cls', ...x])]; return t.length ? `<details class="talents"><summary>Talenti di razza e classe</summary><ul>${t.map(([w, n, d]) => `<li class="${w}"><b>${esc(n)}</b> <span class="muted">${esc(d)}</span></li>`).join('')}</ul></details>` : ''; })()}
   ${(() => { const df = defenseList(ch); return df.length ? `<div class="defs">${df.map(x => `<span class="def ${x.k}" title="da: ${esc(x.da)}">${x.icona} ${esc(x.testo)}<small>${esc(x.da)}</small></span>`).join('')}</div>` : ''; })()}
   <p class="castline">Esperienza: ${ch.data.xp || 0} PE${xpToNext(ch.level) ? ` · prossimo livello a ${xpToNext(ch.level)} PE` : ' · livello massimo'}</p>
-  ${(() => { const cs = companionsOf(store, ch); return cs.length ? `<div class="card"><strong>Compagni (${cs.length}/${MAX_COMPANIONS})</strong><ul class="comps">${cs.map(c => `<li><span><b>${esc(c.name)}</b> · ${esc(c.class)} liv. ${c.level}<small>PF ${c.hp}/${c.max_hp}${maxMana(c) ? ` · mana ${manaOf(c)}/${maxMana(c)}` : ''}${c.hp <= 0 ? ' · a terra' : ''}</small></span><button class="btn sm danger" data-act="dismiss-comp" data-id="${c.id}">Congeda</button></li>`).join('')}</ul></div>` : ''; })()}
+  ${(() => { const cs = companionsOf(store, ch); return cs.length ? `<div class="card"><strong>Compagni (${cs.length}/${MAX_COMPANIONS})</strong><ul class="comps">${cs.map(c => `<li><span class="mini-por">${portraitOf(c)}</span><span><b>${esc(c.name)}</b> · ${esc(c.class)} liv. ${c.level}<small>PF ${c.hp}/${c.max_hp}${maxMana(c) ? ` · mana ${manaOf(c)}/${maxMana(c)}` : ''}${c.hp <= 0 ? ' · a terra' : ''}</small></span><button class="btn sm danger" data-act="dismiss-comp" data-id="${c.id}">Congeda</button></li>`).join('')}</ul></div>` : ''; })()}
   ${(ch.data.punti || 0) > 0 ? `<div class="card"><strong>${ch.data.punti} ${ch.data.punti === 1 ? 'punto' : 'punti'} caratteristica da spendere</strong><div class="btnrow"><button class="btn sm primary" data-act="spend-points">Distribuisci</button></div></div>` : ''}
   ${cast ? `<p class="castline">Magia: ${STAT_NAME[cast]} · CD ${8 + pb + mod(ch.stats[cast])}</p>` : ''}
   ${ch.data.note ? `<div class="card"><strong>Note</strong><p>${esc(ch.data.note)}</p></div>` : ''}
@@ -254,7 +255,7 @@ async function createCharacter() {
   const v = await characterDialog({ saved, level });
   if (!v) return;
   localStorage.setItem('dnd.lastPlayer', JSON.stringify(v.player || ''));
-  const f = buildSheet({ name: v.name, raceId: v.raceId, classId: v.classId, level: v.level, base: v.base });
+  const f = buildSheet({ name: v.name, genere: v.genere, raceId: v.raceId, classId: v.classId, level: v.level, base: v.base });
   const first = [...store.rooms].sort((a, b) => a.sort - b.sort)[0] || null;
   const spot = first ? freeSpot(first) : { col: 1, row: 1 };
   const ch = await insert(store, 'characters', { campaign_id: cid, player: v.player, ...f, room_id: first?.id || null, col: spot.col, row: spot.row, data: { ...f.data, oro: 10 + 25 * (v.level - 1) } });
@@ -349,6 +350,7 @@ const acts = {
   'copy-code': () => navigator.clipboard?.writeText(store.campaign.code).then(() => toast('Codice copiato')).catch(() => toast(store.campaign.code)),
   'dismiss-comp': d => busy(async () => { const c = store.characters.find(x => x.id === d.id); if (c && await confirmBox(`Congedare ${c.name}? Se ne va per la sua strada.`, 'Congeda')) await dismissCompanion(store, c); }),
   raccogli: d => busy(() => raccogli(store, me(), ent(d.id))),
+  'set-genere': d => busy(() => { const c = me(); return update(store, 'characters', c.id, { data: { ...c.data, genere: d.g } }); }),
   'enter-oasi': d => busy(() => enterOasi(store, me(), ent(d.id))),
   'learn-spell': d => busy(() => learnSpell(store, me(), +d.i)),
   disarm: d => busy(() => disarmTrap(store, me(), ent(d.id))),

@@ -370,3 +370,13 @@ dialog.dlg.cc { width: min(860px, 96vw); } .cc .dlg-form { padding: 1.1rem 1.2re
 .def.res { background: #e3f1ee; color: var(--teal-d); } .def.imm { background: #dfe8fb; color: #2a4a8a; } .def.st { background: #efe6fb; color: #4b2c94; } .def.vul { background: #fbe0dd; color: #8a2a24; }
 .tok .stico { font-size: 11px; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0007; stroke-width: 2px; }
 @media (prefers-reduced-motion: reduce) { .status { animation: none; } }
+
+/* ritratti e genere */
+svg.portrait { display: block; width: 100%; height: auto; border-radius: 12px; box-shadow: 0 2px 8px #0003; }
+.sheet-head { display: flex; gap: .8rem; align-items: center; } .sheet-head h2 { margin: 0; } .sheet-head p { margin: .1rem 0 0; } .sheet-por { width: 82px; flex: none; }
+.mini-por { display: inline-block; width: 32px; vertical-align: middle; margin-right: .5rem; } .mini-por svg.portrait { border-radius: 8px; box-shadow: none; } .comps li { align-items: center; } .comps .mini-por { width: 34px; flex: none; margin: 0; }
+.top-por { display: inline-block; width: 30px; margin-right: .4rem; vertical-align: middle; } .top-por svg.portrait { border-radius: 8px; box-shadow: none; }
+.cc-top { display: flex; gap: .8rem; align-items: flex-start; } .cc-por { width: 104px; flex: none; } .cc-top p { margin: 0; flex: 1; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; } .seg-b { border: 0; background: #fff; padding: .42rem .9rem; font: inherit; font-weight: 600; cursor: pointer; border-right: 1px solid var(--line); } .seg-b:last-child { border-right: 0; } .seg-b.on { background: var(--teal); color: #fff; }
+
+.seg { align-self: flex-start; }
