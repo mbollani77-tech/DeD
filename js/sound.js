@@ -105,9 +105,10 @@ export function sfxFromLog(text) {
   if (/→ CRITICO/.test(T)) out.push(['crit', 0]);
   else if (/→ colpito/.test(T)) out.push([/lancia/.test(T) ? 'spell' : 'hit', 0], ...(/lancia/.test(T) ? [['hit', 0.35]] : []));
   else if (/→ mancato/.test(T)) out.push([isFumbleText(T) ? 'fumble' : 'miss', 0]);
+  else if (/usa il potere «/.test(T)) out.push([/PF recuperati|recupera \d+ PF/.test(T) ? 'heal' : 'spell', 0]);
   else if (/lancia .* su .*PF recuperati|usa «.*PF \(/.test(T)) out.push(['heal', 0]);
   else if (/lancia .*\(CD \d+\)/.test(T)) out.push(['spell', 0]);
-  else if (/fa scattare «/.test(T)) out.push(['trap', 0]);
+  else if (/fa scattare «/.test(T) || /è (avvelenato|in fiamme|congelato|spaventato|stordito|maledetto)!/.test(T)) out.push(['trap', 0]);
   else if (/Incarico compiuto|sale al livello|impara una magia|si unisce al gruppo|Dungeon ripulito|si è rimodellato/.test(T)) out.push(['fanfare', 0]);
   else if (/Ricompense in proporzione/.test(T)) out.push(['coin', 0]);
   else if (/Compaiono:|è un mimic|agguato|sbuca|sbarra il passo|alza la polvere|dietro una roccia|dalla palude|guadate/i.test(T)) out.push(['ambush', 0]);
@@ -117,7 +118,7 @@ export function sfxFromLog(text) {
   else if (/attraversa «/.test(T)) out.push(['door', 0]);
   else if (/apre «|compra |vende |Saccheggia/.test(T)) out.push(['coin', 0]);
   else if (/passa la notte|riposa all'oasi/.test(T)) out.push(['heal', 0]);
-  else if (/avvista|individua una trappola|accetta un incarico|entra nell'oasi/.test(T)) out.push([/incarico/.test(T) ? 'quest' : 'find', 0]);
+  else if (/avvista|individua una trappola|accetta un incarico|entra nell'oasi|raccoglie .* da «/.test(T)) out.push([/incarico/.test(T) ? 'quest' : 'find', 0]);
   else if (/scatta|si mette sulla difensiva|si disimpegna|aiuta /.test(T)) out.push(['whoosh', 0]);
   else if (/si allontana da .*attacco di opportunità/.test(T)) out.push(['whoosh', 0]);
   if (/è sconfitto/.test(T) && !/Ricompense/.test(T)) out.push(['death', 0.25]);

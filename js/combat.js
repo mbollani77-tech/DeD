@@ -4,20 +4,22 @@ import { rollD20M, rollExprM } from './rolls.js';
 import { isWorld, worldTravel, endEncounter, onPlaceEntered, worldMove, inCombat } from './journey.js';
 import { checkDungeonDone, maybeRenewAfterLeaving, usePortal } from './dungeon.js';
 import { followLeader, spendAuto } from './companions.js';
+import { skillBonus, checkBonus } from './skills.js';
+import { mitigate, factorTxt, dmgLabel, maybeProc, applyStatus, cureStatus, statiOf, hasStato, statusMalus, STATI, tipoNome, COMUNI } from './status.js';
 import { monsterFromPreset } from './random.js';
 import { startCombat, endCombatIfDone, maybeStartCombat, turnGuard, checkWipe, isCoop, inCombat as inFight } from './combatflow.js';
 import { mod, prof, hexesFor, ITEMS, scrollItem, weaponCheck, spellCheck, CLASSES, maxMana, manaOf, spellCost, BESTIARY } from './rules.js';
 import { update, patchData, say, setCampaignState, remove } from './db.js';
 import { propBlocks } from './props.js';
 import { dist, los, key, reachable, hexesWithin } from './hex.js';
-import { getEco, saveEco, weaponSlot, spellSlot, spendWeapon, noSlot, advPeek, advConsume, isUnarmed, isRogue, isBonusSpell } from './economia.js';
+import { mixAdv, getEco, saveEco, weaponSlot, spellSlot, spendWeapon, noSlot, advPeek, advConsume, isUnarmed, isRogue, isBonusSpell } from './economia.js';
 import { attackFlavor, saveFlavor, mishapFlavor, outcomeOf, MOVE_MISHAPS } from './flavor.js';
 
 const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const noArt = s => s.replace(/^(il|lo|la|le|gli|i|un|uno|una|l)\s+/, '');
 const dmgExpr = (dado, m = 0) => (m ? `${dado}${m > 0 ? '+' : ''}${m}` : dado);
 const statFor = (ch, s) => (s === 'fin' ? (ch.stats.des >= ch.stats.for ? 'des' : 'for') : s);
-const monSave = (e, stat) => (stat === 'des' ? (e.data.dex || 0) : (e.data[stat] || 0));
+export const monSave = (e, stat) => (stat === 'des' ? (e.data.dex || 0) : (e.data[stat] || 0));
 
 export const here = (list, roomId, h) => list.filter(e => e.room_id === roomId && e.col === h.col && e.row === h.row);
 export const liveMonsters = (store, roomId) => store.entities.filter(e => e.room_id === roomId && e.kind === 'monster' && !e.data.dead);
@@ -93,17 +95,17 @@ async function rewardKill(store, ent, killerId) {
   say(store, k.name, 'event', `${ent.data.boss ? 'Il boss ' : ''}${ent.name} è sconfitto da ${k.name}! Ricompense in proporzione ai danni: ${parts.join('; ')}.`);
 }
 
-export async function damageEntity(store, ent, dmg, by = null) {
-  const was = !!ent.data.dead; const before = ent.data.hp ?? 0; const hp = Math.max(0, before - dmg); const dead = hp === 0;
-  const dmgBy = { ...(ent.data.dmgBy || {}) }; if (by) dmgBy[by] = (dmgBy[by] || 0) + Math.min(dmg, before);
+export async function damageEntity(store, ent, dmg, by = null, tipo = 'fisico') {
+  const m = mitigate(ent, dmg, tipo); const was = !!ent.data.dead; const before = ent.data.hp ?? 0; const hp = Math.max(0, before - m.dealt); const dead = hp === 0;
+  const dmgBy = { ...(ent.data.dmgBy || {}) }; if (by) dmgBy[by] = (dmgBy[by] || 0) + Math.min(m.dealt, before);
   await update(store, 'entities', ent.id, { data: { ...ent.data, hp, dead, dmgBy }, hidden: false });
   if (dead && !was && by) await rewardKill(store, ent, by);
   if (dead && !was) { await checkDungeonDone(store, ent); if (isCoop(store)) await endCombatIfDone(store); }
-  return { hp, dead };
+  return { hp, dead, dealt: m.dealt, factor: m.factor };
 }
-export async function damageChar(store, ch, dmg) {
-  const hp = Math.max(0, ch.hp - dmg);
-  await update(store, 'characters', ch.id, { hp }); if (hp === 0) await checkWipe(store); return { hp, down: hp === 0 };
+export async function damageChar(store, ch, dmg, tipo = 'fisico') {
+  const m = mitigate(ch, dmg, tipo); const hp = Math.max(0, ch.hp - m.dealt);
+  await update(store, 'characters', ch.id, { hp }); if (hp === 0 && m.dealt > 0) await checkWipe(store); return { hp, down: hp === 0, dealt: m.dealt, factor: m.factor };
 }
 export async function healChar(store, ch, amt) {
   const hp = Math.min(ch.max_hp, ch.hp + amt);
@@ -128,14 +130,18 @@ export async function weaponAttack(store, ch, w, target, adv = null, opts = {}) 
   const m = mod(ch.stats[statFor(ch, w.stat)]);
   const dm = slot === 'bonus' && !isUnarmed(w) ? Math.min(0, m) : m; // la seconda arma non somma il modificatore positivo
   // prima il tiro per colpire (si può annullare), poi si paga l'azione
-  const { r, hit, crit, outcome } = await resolveAttack(m + (wc.prof ? prof(ch.level) : 0), target.data.ac ?? 10, advPeek(ch, target, adv), `${ch.name}: tiro per colpire con ${w.nome} contro ${target.name} (CA ${target.data.ac ?? 10})`, !opts.auto);
-  await advConsume(store, ch);
+  const pot = slot === 'reazione' ? null : getEco(ch).pot; // un potere unico (colpo) in corso: vantaggio e danni extra
+  const tipoDmg = pot?.tipo || 'fisico';
+  const { r, hit, crit, outcome } = await resolveAttack(m + (wc.prof ? prof(ch.level) : 0) + statusMalus(ch), target.data.ac ?? 10, mixAdv(advPeek(ch, target, adv), pot?.adv ? 'adv' : null), `${ch.name}: tiro per colpire con ${w.nome} contro ${target.name} (CA ${target.data.ac ?? 10})`, !opts.auto);
+  await advConsume(store, ch); if (pot) await saveEco(store, ch, { pot: null });
   if (slot === 'reazione') await saveEco(store, ch, { re: 'Attacco di opportunità' }); else await spendWeapon(store, ch, w, i, slot);
   let txt = `${ch.name} ${slot === 'reazione' ? 'fa un attacco di opportunità su' : slot === 'bonus' ? 'attacca (azione bonus)' : 'attacca'} ${target.name} con ${w.nome}: ${r.text}`;
   if (hit) {
-    const d = await rollExprM(dmgExpr(crit ? critExpr(w.dado) : w.dado, dm), `${ch.name}: ${crit ? 'CRITICO! ' : ''}tira i danni di ${w.nome}`, !opts.auto); const amt = Math.max(0, d.total);
-    const res = await damageEntity(store, target, amt, ch.id);
-    txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${amt} danni (${d.text})` + (res.dead ? `. ${target.name} è sconfitto!` : '');
+    const baseDmg = pot && pot.dmg && pot.dmg !== '0' ? `${w.dado}+${pot.dmg}` : w.dado;
+    const d = await rollExprM(dmgExpr(crit ? critExpr(baseDmg) : baseDmg, dm), `${ch.name}: ${crit ? 'CRITICO! ' : ''}tira i danni di ${w.nome}${pot ? ` + ${pot.nome}` : ''}`, !opts.auto); const amt = Math.max(0, d.total);
+    const res = await damageEntity(store, target, amt, ch.id, tipoDmg);
+    txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${res.dealt} danni${dmgLabel(tipoDmg)} (${d.text})${factorTxt(res.factor, tipoDmg)}` + (res.dead ? `. ${target.name} è sconfitto!` : '');
+    if (!res.dead && tipoDmg !== 'fisico') await maybeProc(store, target, tipoDmg, res.dealt, { dc: 8 + prof(ch.level) + m });
   } else txt += ' → mancato';
   say(store, ch.name, 'combat', txt + flav(outcome, ch.name, target.name));
 }
@@ -143,7 +149,7 @@ export async function weaponAttack(store, ch, w, target, adv = null, opts = {}) 
 export async function castSpell(store, ch, sp, hex, room, adv = null, auto = false) {
   const sc = spellCheck(ch, sp); if (!sc.ok) throw new Error(`${sp.nome}: ${sc.why}.`);
   const slot = spellSlot(ch, sp); if (!slot) throw new Error(noSlot(ch, isBonusSpell(sp)));
-  if (sp.tipo !== 'cura' && isCoop(store) && !inFight(store)) await startCombat(store, ch.room_id, { first: ch.id });
+  if (sp.tipo !== 'cura' && sp.tipo !== 'rimedio' && isCoop(store) && !inFight(store)) await startCombat(store, ch.room_id, { first: ch.id });
   turnGuard(store, ch);
   const cost = spellCost(sp), mana = manaOf(ch); if (mana < cost) throw new Error(`${sp.nome}: mana insufficiente (serve ${cost}, hai ${mana}).`);
   const pay = async () => { await saveEco(store, ch, slot === 'bonus' ? { bo: sp.nome } : { az: sp.nome }); await update(store, 'characters', ch.id, { data: { ...ch.data, mana: Math.max(0, manaOf(ch) - cost) } }); };
@@ -158,14 +164,21 @@ export async function castSpell(store, ch, sp, hex, room, adv = null, auto = fal
     const d = await rollExprM(dmgExpr(dado, sp.mod ? cm : 0), `${ch.name}: tira la cura di ${sp.nome}`, !auto); const hp = await healChar(store, pc, Math.max(1, d.total));
     return say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} su ${pc.name}: ${d.text} = ${Math.max(1, d.total)} PF recuperati (${hp}/${pc.max_hp}).`);
   }
+  if (sp.tipo === 'rimedio') {
+    if (!pc) throw new Error('Scegli un alleato da liberare.');
+    await pay(); const names = await cureStatus(store, pc, sp.rimedio, sp.nome);
+    return say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} su ${pc.name}: ${names.length ? `non è più ${names.join(', ')}` : 'non c\'era niente da togliere'}.`);
+  }
   if (sp.tipo === 'attacco' || sp.tipo === 'auto') {
     if (!ent) throw new Error('Scegli un mostro come bersaglio.');
     let hit = true, crit = false, outcome = 'hit', head = `${ch.name} lancia ${sp.nome} contro ${ent.name}`;
-    if (sp.tipo === 'attacco') { const a = await resolveAttack(cm + pb, ent.data.ac ?? 10, advPeek(ch, ent, adv), `${ch.name}: tiro per colpire con ${sp.nome} contro ${ent.name} (CA ${ent.data.ac ?? 10})`, !auto); hit = a.hit; crit = a.crit; outcome = a.outcome; head += `: ${a.r.text}`; await advConsume(store, ch); }
+    if (sp.tipo === 'attacco') { const a = await resolveAttack(cm + pb + statusMalus(ch), ent.data.ac ?? 10, advPeek(ch, ent, adv), `${ch.name}: tiro per colpire con ${sp.nome} contro ${ent.name} (CA ${ent.data.ac ?? 10})`, !auto); hit = a.hit; crit = a.crit; outcome = a.outcome; head += `: ${a.r.text}`; await advConsume(store, ch); }
     await pay();
     if (!hit) return say(store, ch.name, 'combat', `${head} → mancato` + flav(outcome, ch.name, ent.name));
-    const d = await rollExprM(crit ? critExpr(dado) : dado, `${ch.name}: ${crit ? 'CRITICO! ' : ''}tira i danni di ${sp.nome}`, !auto); const res = await damageEntity(store, ent, d.total, ch.id);
-    return say(store, ch.name, 'combat', `${head} → ${crit ? 'CRITICO' : 'colpito'}: ${d.total} danni (${d.text})` + (res.dead ? `. ${ent.name} è sconfitto!` : ''));
+    const d = await rollExprM(crit ? critExpr(dado) : dado, `${ch.name}: ${crit ? 'CRITICO! ' : ''}tira i danni di ${sp.nome}`, !auto); const tipoS = sp.dmg || 'arcano'; const res = await damageEntity(store, ent, d.total, ch.id, tipoS);
+    say(store, ch.name, 'combat', `${head} → ${crit ? 'CRITICO' : 'colpito'}: ${res.dealt} danni${dmgLabel(tipoS)} (${d.text})${factorTxt(res.factor, tipoS)}` + (res.dead ? `. ${ent.name} è sconfitto!` : ''));
+    if (!res.dead) await maybeProc(store, ent, tipoS, res.dealt, { dc });
+    return;
   }
   // tiro salvezza, anche ad area
   let targets;
@@ -186,24 +199,27 @@ export async function castSpell(store, ch, sp, hex, room, adv = null, auto = fal
     const sm = t.kind === 'e' ? monSave(t.o, sp.salva || 'des') : mod(t.o.stats[sp.salva || 'des']);
     const sv = rollD20(sm, (sp.salva || 'des') === 'des' && getEco(t.o).schiva ? 'adv' : null); const ok = sv.total >= dc;
     const amt = ok ? (sp.meta ? Math.floor(d.total / 2) : 0) : d.total;
-    if (amt > 0) { if (t.kind === 'e') await damageEntity(store, t.o, amt, ch.id); else await damageChar(store, t.o, amt); }
-    lines.push(`${t.o.name} ${ok ? 'resiste' : 'fallisce'} (${sv.total}) → ${amt}. ${saveFlavor(ok, t.o.name)}`);
+    const tipoS = sp.dmg || 'arcano'; let dealt = 0, fx = '';
+    if (amt > 0) { const rr = t.kind === 'e' ? await damageEntity(store, t.o, amt, ch.id, tipoS) : await damageChar(store, t.o, amt, tipoS); dealt = rr.dealt; fx = factorTxt(rr.factor, tipoS); if (!ok && rr.dealt > 0 && !rr.dead && !rr.down) await maybeProc(store, t.o, tipoS, rr.dealt, { dc }); }
+    lines.push(`${t.o.name} ${ok ? 'resiste' : 'fallisce'} (${sv.total}) → ${dealt}${fx}. ${saveFlavor(ok, t.o.name)}`);
   }
-  say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} (CD ${dc}): ${d.text} = ${d.total} danni base. ${lines.join(' ')}`);
+  say(store, ch.name, 'combat', `${ch.name} lancia ${sp.nome} (CD ${dc}): ${d.text} = ${d.total} danni base${dmgLabel(sp.dmg || 'arcano')}. ${lines.join(' ')}`);
 }
 
 export async function monsterAttack(store, ent, ch, adv = null, opts = {}) {
   const e = getEco(ent);
   if (opts.reaction) { if (e.re) return; } else if (e.az) throw new Error(`${ent.name} ha già usato la sua azione in questo round (${e.az}).`);
   const manual = !opts.reaction && !opts.auto; // l'attacco d'opportunità e il turno automatico tirano da soli, gli altri li tira il Master
-  const { r, hit, crit, outcome } = await resolveAttack(ent.data.atk || 0, ch.ac, advPeek(ent, ch, adv), `${ent.name}: tiro per colpire contro ${ch.name} (CA ${ch.ac})`, manual);
+  const { r, hit, crit, outcome } = await resolveAttack((ent.data.atk || 0) + statusMalus(ent), ch.ac + (getEco(ch).scudo || 0), advPeek(ent, ch, adv), `${ent.name}: tiro per colpire contro ${ch.name} (CA ${ch.ac})`, manual);
   await saveEco(store, ent, opts.reaction ? { re: 'Attacco di opportunità' } : { az: 'Attacco' });
-  let txt = `${ent.name} ${opts.reaction ? 'fa un attacco di opportunità su' : 'attacca'} ${ch.name}: ${r.text}`;
+  let txt = `${ent.name} ${opts.reaction ? 'fa un attacco di opportunità su' : 'attacca'} ${ch.name}: ${r.text}`; let procStato = false;
   if (hit) {
-    const d = await rollExprM(crit ? critExpr(ent.data.dado || '1d4') : (ent.data.dado || '1d4'), `${ent.name}: ${crit ? 'CRITICO! ' : ''}tira i danni`, manual); const res = await damageChar(store, ch, d.total);
-    txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${d.total} danni (${d.text})` + (res.down ? `. ${ch.name} è a terra!` : '');
+    const d = await rollExprM(crit ? critExpr(ent.data.dado || '1d4') : (ent.data.dado || '1d4'), `${ent.name}: ${crit ? 'CRITICO! ' : ''}tira i danni`, manual); const tipoM = ent.data.tipo || 'fisico'; const res = await damageChar(store, ch, d.total, tipoM);
+    txt += ` → ${crit ? 'CRITICO' : 'colpito'}: ${res.dealt} danni${dmgLabel(tipoM)} (${d.text})${factorTxt(res.factor, tipoM)}` + (res.down ? `. ${ch.name} è a terra!` : '');
+    procStato = res.dealt > 0 && !res.down && !!ent.data.stato && Math.random() < (ent.data.statoChance ?? 0.25);
   } else txt += ' → mancato';
   say(store, ent.name, 'combat', txt + flav(outcome, ent.name, ch.name));
+  if (procStato) await applyStatus(store, ch, ent.data.stato, { dc: 10 + Math.round((ent.data.cr || 0) * 2) });
 }
 
 /** Il mostro si avvicina al personaggio più vicino e attacca se è a portata. */
@@ -212,6 +228,7 @@ export async function monsterAutoTurn(store, room, ent, opts = {}) {
   if (!pcs.length) throw new Error('Nessun personaggio in questa stanza.');
   const nearest = from => pcs.map(c => ({ c, d: dist(from, c) })).sort((a, b) => a.d - b.d)[0];
   if (getEco(ent).az) throw new Error(`${ent.name} ha già usato la sua azione in questo round (${getEco(ent).az}).`);
+  if (hasStato(ent, 'paura') || hasStato(ent, 'stordimento')) return say(store, ent.name, 'combat', `${ent.name} è paralizzato (spaventato o stordito) e non può agire.`);
   const rng = hexesFor(ent.data.gittata || 5);
   const inRange = p => { const n = nearest(p); return n.d <= rng && (n.d <= 1 || los(room, p, n.c)); };
   let pos = { col: ent.col, row: ent.row };
@@ -225,7 +242,7 @@ export async function monsterAutoTurn(store, room, ent, opts = {}) {
     }
     return best;
   };
-  const speed = hexesFor(ent.data.speed || 30);
+  const speed = Math.max(1, Math.floor(hexesFor(ent.data.speed || 30) * (hasStato(ent, 'congelamento') ? 0.5 : 1))); // il gelo rallenta
   let dashed = false;
   if (!inRange(pos)) {
     let best = bestSpot(speed);
@@ -243,24 +260,25 @@ export async function monsterAutoTurn(store, room, ent, opts = {}) {
 
 export async function triggerTrap(store, ch, trap) {
   const d = trap.data; const stat = d.save || 'des';
-  const sv = rollD20(mod(ch.stats[stat])); const ok = sv.total >= (d.dc || 12);
+  const sv = rollD20(mod(ch.stats[stat]) + statusMalus(ch)); const ok = sv.total >= (d.dc || 12);
   const dmg = roll(d.dado || '1d6'); const amt = ok ? (d.half ? Math.floor(dmg.total / 2) : 0) : dmg.total;
   await update(store, 'entities', trap.id, { hidden: false, data: { ...d, armed: !!d.reusable, triggered: true } });
-  const res = amt ? await damageChar(store, ch, amt) : null;
-  say(store, ch.name, 'combat', `${ch.name} fa scattare «${trap.name}»! Tiro salvezza ${sv.text} contro CD ${d.dc}: ${ok ? 'riuscito' : 'fallito'} → ${amt} danni (${dmg.text})` + (res?.down ? `. ${ch.name} è a terra!` : '.'));
+  const tipoT = d.tipo || 'fisico'; const res = amt ? await damageChar(store, ch, amt, tipoT) : null;
+  say(store, ch.name, 'combat', `${ch.name} fa scattare «${trap.name}»! Tiro salvezza ${sv.text} contro CD ${d.dc}: ${ok ? 'riuscito' : 'fallito'} → ${res ? res.dealt : 0} danni${dmgLabel(tipoT)} (${dmg.text})${res ? factorTxt(res.factor, tipoT) : ''}` + (res?.down ? `. ${ch.name} è a terra!` : '.'));
+  if (d.stato && !ok && !res?.down) await applyStatus(store, ch, d.stato, { dc: d.dc || 12, noSave: true });
 }
 
 export async function detectTraps(store, ch, room) {
   for (const t of store.entities.filter(e => e.room_id === room.id && e.kind === 'trap' && e.hidden && e.data.armed !== false)) {
     if (dist(ch, t) > 1 || t.data.checked?.[ch.id]) continue;
-    const r = rollD20(mod(ch.stats.sag)); const found = r.total >= (t.data.detect || 12);
+    const r = rollD20(skillBonus(ch, 'percezione')); const found = r.total >= (t.data.detect || 12);
     await update(store, 'entities', t.id, { hidden: found ? false : t.hidden, data: { ...t.data, checked: { ...(t.data.checked || {}), [ch.id]: true } } });
     if (found) say(store, ch.name, 'event', `${ch.name} individua una trappola: ${t.name}! (Percezione ${r.total})`);
   }
 }
 
 export async function disarmTrap(store, ch, trap) {
-  const r = rollD20(mod(ch.stats.des)); const dc = trap.data.disarm || 12;
+  const r = rollD20(skillBonus(ch, 'rapidita')); const dc = trap.data.disarm || 12;
   if (r.total >= dc) { await patchData(store, 'entities', trap, { armed: false }); say(store, ch.name, 'event', `${ch.name} disarma «${trap.name}» (${r.text} contro CD ${dc}).`); }
   else if (r.total <= dc - 5) { say(store, ch.name, 'event', `${ch.name} sbaglia il disarmo (${r.text} contro CD ${dc})…`); await triggerTrap(store, ch, trap); }
   else say(store, ch.name, 'event', `${ch.name} non riesce a disarmare «${trap.name}» (${r.text} contro CD ${dc}).`);
@@ -341,7 +359,7 @@ export async function moveCharacter(store, ch, room, hex, cost) {
   }
   if (isWorld(room) && !inCombat(store)) left = worldMove(ch); // in viaggio il movimento si ricarica a ogni tappa
   await update(store, 'characters', ch.id, { col: hex.col, row: hex.row, move_left: left });
-  if (!inCombat(store)) await regenMana(store, ch, isWorld(room) ? 2 : 1); // camminando si recupera un po' di mana
+  if (!inCombat(store)) { await regenMana(store, ch, isWorld(room) ? 2 : 1); await tickOutOfCombat(store, ch); } // camminando si recupera un po' di mana e gli stati passano
   if (!isWorld(room)) { await followLeader(store, ch); await maybeStartCombat(store, ch, room); } // i compagni stanno vicini anche quando inizia uno scontro
   if (isWorld(room)) { await worldTravel(store, ch, room, hex, cost); if (ch.room_id !== room.id) return; }
   if (mishap) say(store, ch.name, 'event', `${mishapFlavor(ch.name)} (d20: 1, movimento terminato)`);
@@ -364,10 +382,41 @@ export async function passDoor(store, ch, door) {
   await maybeRenewAfterLeaving(store, fromRoom, door.data.target_room);
 }
 
+/** All'inizio del turno di qualcuno: danni degli stati, conto alla rovescia e turni persi. Restituisce { skip }. */
+export async function turnStart(store, cur) {
+  const t = cur.k === 'c' ? store.characters.find(c => c.id === cur.id) : store.entities.find(e => e.id === cur.id); if (!t) return { skip: false };
+  const stati = [...statiOf(t)]; if (!stati.length) return { skip: false };
+  let skip = false; const next = [];
+  for (const s of stati) {
+    const def = STATI[s.id]; if (!def) continue;
+    if (def.dot) { const d = roll(def.dot); const r = cur.k === 'c' ? await damageChar(store, t, d.total, def.tipo) : await damageEntity(store, t, d.total, null, def.tipo); say(store, t.name, 'combat', `${t.name} subisce ${r.dealt} danni${dmgLabel(def.tipo)} da ${def.nome.toLowerCase()}${factorTxt(r.factor, def.tipo)}.`); }
+    if (def.salta) skip = true;
+    const left = s.turni >= 99 ? s.turni : s.turni - 1;
+    if (left > 0) next.push({ ...s, turni: left }); else say(store, t.name, 'event', `${t.name} non è più ${def.nome.toLowerCase()}.`);
+  }
+  await update(store, t.kind ? 'entities' : 'characters', t.id, { data: { ...t.data, stati: next } });
+  if (skip) say(store, t.name, 'combat', `${t.name} perde il turno (${stati.filter(s => STATI[s.id]?.salta).map(s => STATI[s.id].nome.toLowerCase()).join(', ')}).`);
+  if (cur.k === 'c' && next.some(s => s.id === 'congelamento')) { const half = Math.ceil(hexesFor(t.speed) / 2); if (t.move_left > half) await update(store, 'characters', t.id, { move_left: half }); }
+  return { skip };
+}
+
+/** Fuori dagli scontri ogni spostamento fa passare un po' di tempo: veleno e fiamme fanno 1 danno (mai fino a 0), poi gli stati si esauriscono. */
+export async function tickOutOfCombat(store, ch) {
+  const stati = statiOf(ch); if (!stati.length || ch.hp <= 0) return;
+  const next = []; let hp = ch.hp;
+  for (const s of stati) {
+    const def = STATI[s.id]; if (!def) continue;
+    if (def.dot) hp = Math.max(1, hp - mitigate(ch, 1, def.tipo).dealt);
+    const left = s.turni >= 99 ? 99 : s.turni - 1;
+    if (left > 0) next.push({ ...s, turni: left }); else say(store, ch.name, 'event', `${ch.name} non è più ${def.nome.toLowerCase()}.`);
+  }
+  await update(store, 'characters', ch.id, { hp, data: { ...ch.data, stati: next } });
+}
+
 /** Il forziere era un mimic: si spalanca in una bocca piena di denti. Se nessuno del gruppo se ne accorge (Saggezza), morde per primo. */
 async function springMimic(store, ch, ent) {
   const near = store.characters.filter(c => c.room_id === ch.room_id && c.hp > 0 && dist(c, ent) <= 5);
-  const best = near.reduce((b, c) => (mod(c.stats.sag) > mod(b.stats.sag) ? c : b), ch); const r = rollD20(mod(best.stats.sag)); const noticed = r.total >= 13;
+  const best = near.reduce((b, c) => (skillBonus(c, 'percezione') > skillBonus(b, 'percezione') ? c : b), ch); const r = rollD20(skillBonus(best, 'percezione')); const noticed = r.total >= 13;
   const lvl = Math.max(1, Math.round(near.reduce((a, c) => a + c.level, 0) / Math.max(1, near.length)));
   const m = monsterFromPreset(BESTIARY.find(b => b.id === 'mimic'), 'Mimic'); const mul = Math.min(1, 0.35 + 0.15 * lvl); const hp = Math.max(8, Math.round(m.data.hp * mul));
   await update(store, 'entities', ent.id, { kind: 'monster', name: 'Mimic', hidden: false, data: { ...m.data, hp, maxHp: hp, loot: { oro: ent.data.oro || 0, oggetti: ent.data.oggetti || [] }, dmgBy: {} } });
@@ -391,14 +440,18 @@ export async function lootEntity(store, ch, ent) {
 }
 
 export async function useItem(store, ch, idx) {
-  const it = (ch.data.oggetti || [])[idx]; if (!it?.cura) throw new Error('Questo oggetto non si può usare così.');
+  const it = (ch.data.oggetti || [])[idx]; if (!(it?.cura || it?.rimedio || it?.resTemp || it?.mana)) throw new Error('Questo oggetto non si può usare così.');
   turnGuard(store, ch);
   if (getEco(ch).az) throw new Error(noSlot(ch));
   await saveEco(store, ch, { az: 'Usare un oggetto' });
-  const d = roll(it.cura); const hp = Math.min(ch.max_hp, ch.hp + d.total);
+  const parts = []; let hp = ch.hp;
+  if (it.cura) { const d = roll(it.cura); hp = Math.min(ch.max_hp, ch.hp + d.total); parts.push(`${d.text} = ${d.total} PF (${hp}/${ch.max_hp})`); }
   const rest = ch.data.oggetti.filter((_, i) => i !== idx);
   await update(store, 'characters', ch.id, { hp, data: { ...ch.data, oggetti: rest } });
-  say(store, ch.name, 'event', `${ch.name} usa «${it.nome}»: ${d.text} = ${d.total} PF (${hp}/${ch.max_hp}).`);
+  if (it.mana) { const mx = maxMana(ch); if (!mx) parts.push('non serve a chi non lancia magie'); else { const nm = Math.min(mx, manaOf(ch) + it.mana); await update(store, 'characters', ch.id, { data: { ...store.characters.find(c => c.id === ch.id).data, mana: nm } }); parts.push(`+${it.mana} mana (${nm}/${mx})`); } }
+  if (it.rimedio) { const names = await cureStatus(store, ch, it.rimedio, it.nome); parts.push(names.length ? `non è più ${names.join(', ')}` : 'nessuno stato da togliere'); }
+  if (it.resTemp) { await applyStatus(store, ch, 'resistenza', { noSave: true, tipo: it.resTemp, turni: 20 }); parts.push(`resistenza al ${tipoNome(it.resTemp)} per tutto lo scontro`); }
+  say(store, ch.name, 'event', `${ch.name} usa «${it.nome}»: ${parts.join('; ')}.`);
 }
 
 /** Tenta una quest per aprire una porta. `input` = risposta dell'enigma. */
@@ -409,7 +462,7 @@ export async function attemptQuest(store, ch, door, quest, input = '') {
     ok = String(d.answer || '').split('|').map(a => noArt(norm(a))).filter(Boolean).includes(given);
     detail = ok ? 'risposta esatta' : 'risposta sbagliata';
   } else if (quest.kind === 'check') {
-    const r = rollD20(mod(ch.stats[d.stat || 'des'])); ok = r.total >= (d.dc || 12); detail = `${r.text} contro CD ${d.dc}`;
+    const r = rollD20(checkBonus(ch, d.stat || 'des')); ok = r.total >= (d.dc || 12); detail = `${r.text} contro CD ${d.dc}`;
   } else {
     const wanted = norm(d.key_item || '');
     const holder = store.characters.find(c => c.room_id === ch.room_id && (c.data.oggetti || []).some(i => norm(i.nome) === wanted));

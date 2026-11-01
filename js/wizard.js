@@ -37,7 +37,7 @@ const stepsOf = S => (S.mode === 'mondo' ? ['Struttura', 'Percorso', 'Mostri', '
 /** Apre la procedura guidata. Restituisce la configurazione scelta, oppure null se annullata. */
 export function dungeonWizard({ level = 1, party = 3 } = {}) {
   return new Promise(resolve => {
-    const S = { step: 0, mode: 'singolo', tplId: 'cripta', auto: true, autoLoot: true, fog: false, bossOn: true, bossPick: 'tema', preview: null, levels: ['cripta', 'goblin', 'tempio', 'orchi', 'ghiaccio', 'bosco'], perLevel: 5, bossEach: true, wsize: 'medio', towns: 3, oases: 2, encounters: 'normali', world: null };
+    const S = { step: 0, mode: 'singolo', tplId: 'cripta', auto: true, autoLoot: true, fog: false, bossOn: true, bossPick: 'tema', preview: null, levels: ['cripta', 'goblin', 'tempio', 'orchi', 'ghiaccio', 'bosco'], perLevel: 5, bossEach: true, wsize: 'medio', towns: 3, oases: 2, trees: 4, encounters: 'normali', world: null };
     const tpl = () => TEMPLATES.find(t => t.id === S.tplId);
     const applyTpl = t => { Object.assign(S, t.def); S.bossPick = 'tema'; S.preview = null; };
     applyTpl(tpl());
@@ -84,12 +84,13 @@ export function dungeonWizard({ level = 1, party = 3 } = {}) {
         case 'Il mondo': return `<h3>Quanto è grande?</h3><div class="wz-grid">${Object.entries(WSIZES).map(([k, [t, d]]) => card('wsize', k, t, d)).join('')}</div>
           <div class="fld wz-num"><label for="wz-towns">Quanti paesi? (2–8)</label><input id="wz-towns" type="number" min="2" max="8" value="${S.towns}"></div>
           <div class="fld wz-num"><label for="wz-oases">Oasi (0–8): entrandoci si tira un d20 — riposo, forzieri con quest, agguati o un viandante da arruolare</label><input id="wz-oases" type="number" min="0" max="8" value="${S.oases}"></div>
+          <div class="fld wz-num"><label for="wz-trees">Alberi con frutti (0–12): ognuno dà frutti curativi, che ricrescono dopo ogni dungeon</label><input id="wz-trees" type="number" min="0" max="12" value="${S.trees}"></div>
           <h3>Incontri durante il viaggio</h3>${group('encounters', FREQS)}
           <p class="wz-note">A ogni tappa si tira un dado: nei boschi e nelle paludi si rischia di più, sulle strade meno, vicino ai paesi per niente. Se esce un incontro, il gruppo si trova subito in una piccola stanza di scontro.</p>
           <div class="wz-prev"><div class="wz-prev-h"><strong>Anteprima del mondo</strong><button type="button" class="btn sm" data-regen>Un altro mondo</button></div>${S.world ? `<svg viewBox="${S.world.viewBox}" role="img" aria-label="Anteprima della mappa del mondo">${S.world.svg}</svg>` : ''}</div>`;
         default: {
           const p = S.bossOn ? bossPreset() : null;
-          if (S.mode === 'mondo') return `<ul class="wz-sum"><li><span>Struttura</span><b>Campagna con mappa del mondo</b></li><li><span>Mondo</span><b>${WSIZES[S.wsize][0]}, ${S.towns} paesi, ${S.oases} oasi</b></li>
+          if (S.mode === 'mondo') return `<ul class="wz-sum"><li><span>Struttura</span><b>Campagna con mappa del mondo</b></li><li><span>Mondo</span><b>${WSIZES[S.wsize][0]}, ${S.towns} paesi, ${S.oases} oasi, ${S.trees} alberi con frutti</b></li>
             <li><span>Percorso</span><b>${S.levels.map(id => TEMPLATES.find(t => t.id === id).nome).join(' → ')}</b></li><li><span>Dungeon</span><b>${S.perLevel} stanze ciascuno${S.bossEach ? ', con boss' : ''}</b></li>
             <li><span>Mostri</span><b>${DIFFS[S.diff][0]}, ${DENS[S.monsters][0].toLowerCase()} (la difficoltà sale ogni 2 dungeon)</b></li><li><span>Incontri di viaggio</span><b>${FREQS[S.encounters][0]}</b></li>
             <li><span>Regole</span><b>Mostri ${S.auto ? 'automatici' : 'manuali'}, bottino ${S.autoLoot ? 'automatico' : 'a mano'}, ${S.fog ? 'con' : 'senza'} nebbia nei dungeon</b></li></ul>
@@ -103,8 +104,8 @@ export function dungeonWizard({ level = 1, party = 3 } = {}) {
     function card2(field, value, title, sub) { return `<button type="button" class="wz-card ${S[field] === value ? 'on' : ''}" data-set="${field}" data-val="${value}" data-bool="1" aria-pressed="${S[field] === value}"><strong>${esc(title)}</strong><small>${esc(sub)}</small></button>`; }
 
     const sampleWorld = () => {
-      const sz = WSIZES[S.wsize]; const w = generateWorld({ cols: sz[2], rows: sz[3], towns: S.towns, dungeons: S.levels.length, oases: S.oases });
-      S.world = roomThumb({ cols: w.cols, rows: w.rows, cells: w.cells, meta: w.meta, fog: false }, { tokens: w.places.map(p => ({ col: p.col, row: p.row, color: p.tipo === 'paese' ? '#e0a526' : p.tipo === 'oasi' ? '#3d9ad1' : '#ae3f3a' })) });
+      const sz = WSIZES[S.wsize]; const w = generateWorld({ cols: sz[2], rows: sz[3], towns: S.towns, dungeons: S.levels.length, oases: S.oases, trees: S.trees });
+      S.world = roomThumb({ cols: w.cols, rows: w.rows, cells: w.cells, meta: w.meta, fog: false }, { tokens: w.places.map(p => ({ col: p.col, row: p.row, color: p.tipo === 'paese' ? '#e0a526' : p.tipo === 'oasi' ? '#3d9ad1' : p.tipo === 'albero' ? '#4f9a3d' : '#ae3f3a' })) });
     };
     const sample = () => {
       const t = tpl(); const sz = { piccole: [[10, 13], [8, 10]], medie: [[12, 17], [9, 12]], grandi: [[16, 22], [11, 15]] }[S.size];
@@ -134,14 +135,14 @@ export function dungeonWizard({ level = 1, party = 3 } = {}) {
       if (b.dataset.n) { S.n = +b.dataset.n; return render(); }
       if (b.dataset.set) {
         const f = b.dataset.set; const v = b.dataset.bool ? b.dataset.val === 'true' : b.dataset.val;
-        if (f === 'tplId') { S.tplId = v; applyTpl(tpl()); } else { S[f] = v; S.preview = null; if (f === 'wsize') { S.towns = WSIZES[v][4]; S.oases = WSIZES[v][5]; S.world = null; } if (f === 'mode') S.step = 0; }
+        if (f === 'tplId') { S.tplId = v; applyTpl(tpl()); } else { S[f] = v; S.preview = null; if (f === 'wsize') { S.towns = WSIZES[v][4]; S.oases = WSIZES[v][5]; S.trees = WSIZES[v][5] * 2; S.world = null; } if (f === 'mode') S.step = 0; }
         return render();
       }
       if (b.dataset.next !== undefined) {
         if (S.step < stepsOf(S).length - 1) { S.step++; return render(); }
         if (S.mode === 'mondo') {
           const sz = WSIZES[S.wsize];
-          result = { mode: 'mondo', levels: [...S.levels], perLevel: Math.max(3, Math.min(12, S.perLevel)), bossEach: S.bossEach, diff: S.diff, monsters: S.monsters, cols: sz[2], rows: sz[3], towns: Math.max(2, Math.min(8, S.towns)), oases: Math.max(0, Math.min(8, S.oases)), encounters: S.encounters, auto: S.auto, autoLoot: S.autoLoot, fog: S.fog };
+          result = { mode: 'mondo', levels: [...S.levels], perLevel: Math.max(3, Math.min(12, S.perLevel)), bossEach: S.bossEach, diff: S.diff, monsters: S.monsters, cols: sz[2], rows: sz[3], towns: Math.max(2, Math.min(8, S.towns)), oases: Math.max(0, Math.min(8, S.oases)), trees: Math.max(0, Math.min(12, S.trees)), encounters: S.encounters, auto: S.auto, autoLoot: S.autoLoot, fog: S.fog };
           return dlg.close();
         }
         const t = tpl();
@@ -153,6 +154,7 @@ export function dungeonWizard({ level = 1, party = 3 } = {}) {
     dlg.addEventListener('input', e => {
       if (e.target.id === 'wz-n') { const v = Math.round(+e.target.value); if (v >= 2 && v <= 50) S.n = v; }
       if (e.target.id === 'wz-per') { const v = Math.round(+e.target.value); if (v >= 3 && v <= 12) S.perLevel = v; }
+      if (e.target.id === 'wz-trees') { const v = Math.round(+e.target.value); if (v >= 0 && v <= 12) { S.trees = v; S.world = null; } }
       if (e.target.id === 'wz-oases') { const v = Math.round(+e.target.value); if (v >= 0 && v <= 8) { S.oases = v; S.world = null; } }
       if (e.target.id === 'wz-towns') { const v = Math.round(+e.target.value); if (v >= 2 && v <= 8) { S.towns = v; S.world = null; } }
     });

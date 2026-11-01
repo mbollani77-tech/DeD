@@ -1,5 +1,6 @@
 // Mappa del mondo: terreni, strade, paesi, luoghi da visitare e incontri durante il viaggio.
 import { pick, shuffle, rollDie } from './dice.js';
+import { FRUTTI } from './rules.js';
 import { key, dist, neighbors } from './hex.js';
 
 /** Terreni: cell = tipo di cella per il movimento ('' pavimento, 'd' difficile, 'a' guado, 'w' invalicabile). enc = soglia del d20 per un incontro. */
@@ -39,7 +40,7 @@ const ROAD_COST = { P: 1, S: 0.5, B: 2, C: 1.5, L: 3, F: 2, M: 7 };
  * Restituisce { name, cols, rows, cells, meta, places } dove places = [{ tipo: 'paese'|'dungeon', col, row, order }]
  * (i dungeon sono ordinati dal più vicino al paese di partenza al più lontano).
  */
-export function generateWorld({ cols = 40, rows = 28, towns = 3, dungeons = 6, oases = 2 } = {}) {
+export function generateWorld({ cols = 40, rows = 28, towns = 3, dungeons = 6, oases = 2, trees = 3 } = {}) {
   const nh = makeNoise(), nm = makeNoise();
   const H = [], Mo = [];
   for (let r = 0; r < rows; r++) { H.push([]); Mo.push([]); for (let c = 0; c < cols; c++) { H[r].push(fbm(nh, c, r * 1.15)); Mo[r].push(fbm(nm, c + 40, r * 1.15 + 40)); } }
@@ -88,6 +89,11 @@ export function generateWorld({ cols = 40, rows = 28, towns = 3, dungeons = 6, o
   const roads = []; for (let r = 1; r < rows - 1; r++) for (let c = 1; c < cols - 1; c++) if (T[r][c] === 'S') roads.push({ col: c, row: r });
   const nearRoad = land.filter(h => 'PCB'.includes(T[h.row][h.col]) && roads.some(rd => dist(rd, h) <= 3 && dist(rd, h) >= 1));
   for (let i = 0; i < oases; i++) { let h = null; for (let d = 6; d >= 3 && !h; d--) h = take(nearRoad.length ? nearRoad : land, d); if (h) { places.push({ tipo: 'oasi', col: h.col, row: h.row, order: i }); T[h.row][h.col] = 'P'; } }
+
+  // alberi con frutti: nei boschi e nelle pianure, lontani dagli altri luoghi
+  const pesca = () => { const tot = Object.values(FRUTTI).reduce((a, f) => a + f.peso, 0); let x = Math.random() * tot; for (const [k, f] of Object.entries(FRUTTI)) { x -= f.peso; if (x <= 0) return k; } return 'melo'; };
+  const treeLand = land.filter(h => 'BP'.includes(T[h.row][h.col]));
+  for (let i = 0; i < trees; i++) { let h = null; for (let d = 5; d >= 2 && !h; d--) h = take(treeLand.length ? treeLand : land, d); if (h) places.push({ tipo: 'albero', col: h.col, row: h.row, order: i, frutto: pesca() }); }
 
   const cells = {}; for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) { const cell = TERRAIN[T[r][c]].cell; if (cell) cells[key(c, r)] = cell; }
   const startHex = freeNear(cells, cols, rows, places[0], new Set([key(places[0].col, places[0].row)]), 1)[0] || { col: places[0].col, row: places[0].row };

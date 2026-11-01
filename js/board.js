@@ -3,6 +3,7 @@ import { SQ3, center, key } from './hex.js';
 import { esc } from './ui.js';
 import { THEMES, PROPS, propSvg, hash } from './props.js';
 import { TERRAIN, terrainAt } from './world.js';
+import { statiIcons } from './status.js';
 
 export const SIZE = 24;
 const hexPts = (cx, cy, s, rot = 0) => Array.from({ length: 6 }, (_, i) => { const a = Math.PI / 180 * (60 * i - 30 + rot); return `${(cx + s * Math.cos(a)).toFixed(1)},${(cy + s * Math.sin(a)).toFixed(1)}`; }).join(' ');
@@ -72,7 +73,7 @@ export function createBoard(svg, h = {}) {
   const fit = () => { if (d) { view = fullBox(d.room); apply(); } };
 
   function token(t, cx, cy) {
-    return `<g class="tok ${t.cls} ${t.ghost ? 'ghost' : ''} ${t.sel ? 'sel' : ''}" data-c="${t.col}" data-r="${t.row}" data-kind="${t.kind}" data-id="${t.id}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})"><title>${esc(t.title)}</title>${t.body}${t.turn ? `<circle class="turnring" r="${SIZE * 0.98}"/>` : ''}${t.sel ? `<circle class="selring" r="${SIZE * 0.86}"/>` : ''}</g>`;
+    return `<g class="tok ${t.cls} ${t.ghost ? 'ghost' : ''} ${t.sel ? 'sel' : ''}" data-c="${t.col}" data-r="${t.row}" data-kind="${t.kind}" data-id="${t.id}" transform="translate(${cx.toFixed(1)},${cy.toFixed(1)})"><title>${esc(t.title)}</title>${t.body}${t.turn ? `<circle class="turnring" r="${SIZE * 0.98}"/>` : ''}${t.stati ? `<text class="stico" y="${-SIZE * 0.95}">${t.stati}</text>` : ''}${t.sel ? `<circle class="selring" r="${SIZE * 0.86}"/>` : ''}</g>`;
   }
   const hpBar = (hp, max) => { const w = SIZE * 1.1, p = Math.max(0, Math.min(1, hp / (max || 1))); return `<rect class="hp-bg" x="${-w / 2}" y="${SIZE * 0.62}" width="${w}" height="4" rx="2"/><rect class="hp-fg ${p < 0.34 ? 'low' : p < 0.67 ? 'mid' : ''}" x="${-w / 2}" y="${SIZE * 0.62}" width="${(w * p).toFixed(1)}" height="4" rx="2"/>`; };
   const glyph = (g, y = 0, s = 0.95) => `<text class="glyph" y="${y}" font-size="${SIZE * s}">${g}</text>`;
@@ -128,7 +129,7 @@ export function createBoard(svg, h = {}) {
       if (d.visible && !d.visible.has(key(e.col, e.row))) return;
       if (!master && luce === 'buia' && e.kind === 'monster' && !e.data.dead && !lit(e.col, e.row)) return;
       const dd = e.data || {}; const s = sel && sel.kind === 'entity' && sel.id === e.id;
-      const base = { id: e.id, col: e.col, row: e.row, ghost: master && e.hidden, sel: s, turn: d.turnId === e.id && !dd.dead, title: e.name + (e.hidden ? ' (nascosto)' : '') };
+      const base = { id: e.id, col: e.col, row: e.row, ghost: master && e.hidden, sel: s, turn: d.turnId === e.id && !dd.dead, stati: e.kind === 'monster' && !dd.dead ? statiIcons(e) : '', title: e.name + (e.hidden ? ' (nascosto)' : '') };
       if (e.kind === 'door' && dd.place) toks.push({ ...base, z: 1, kind: 'entity', cls: 'place' + (dd.waiting ? ' off' : ''), title: e.name + (e.hidden ? ' (non ancora scoperto)' : '') + (dd.waiting ? ' — dormiente fino a quando finirete un altro dungeon' : ''), body: `<circle class="pbase" r="${SIZE * 0.82}"/>${glyph(dd.icon || (dd.place === 'paese' ? '🏘️' : '🏰'), 0, 1.05)}${dd.waiting ? glyph('🔒', SIZE * 0.5, 0.7) : ''}<text class="plabel" y="${SIZE * 1.32}">${esc(e.name)}</text>` });
       else if (e.kind === 'npc') toks.push({ ...base, z: 2, kind: 'entity', cls: 'npc', title: `${e.name} — ${({ locanda: 'Locanda', negozio: 'Negozio', voci: 'Voci e incarichi', prigioniero: 'Prigioniero: puoi convincerlo a unirsi', viandante: 'Viandante: puoi convincerlo a unirsi' })[dd.role] || ''}`, body: `${shadow}<circle r="${SIZE * 0.62}"/><circle r="${SIZE * 0.45}" class="inner"/><text class="ini" y="1">${initials(e.name)}</text>${glyph(({ locanda: '🍺', negozio: '💰', voci: '💬', prigioniero: '⛓️', viandante: '🎒' })[dd.role] || '', -SIZE * 0.75, 0.5)}` });
       else if (e.kind === 'door') toks.push({ ...base, z: 0, kind: 'entity', cls: 'door', body: `<path d="M-11 12 V-6 Q-11 -14 0 -14 Q11 -14 11 -6 V12 Z" fill="${dd.locked ? '#6b3a2a' : '#8a5f34'}" stroke="#2c1a0e" stroke-width="1.8"/><path d="M0 -14 V12 M-11 -2 H11" stroke="#2c1a0e" stroke-width="1" opacity=".6"/><circle cx="5" cy="2" r="1.6" fill="#e5c76a"/>${dd.locked ? `<rect x="-4.5" y="-2" width="9" height="8" rx="1.5" fill="#d9b43f" stroke="#5a4210"/><path d="M-2.5 -2 V-5 a2.5 2.5 0 0 1 5 0 V-2" fill="none" stroke="#5a4210" stroke-width="1.6"/>` : ''}` });
@@ -141,7 +142,7 @@ export function createBoard(svg, h = {}) {
     });
     (d.characters || []).forEach(c => {
       const s = sel && sel.kind === 'char' && sel.id === c.id; const me = d.meId === c.id;
-      toks.push({ id: c.id, col: c.col, row: c.row, z: 3, kind: 'pc', sel: s, turn: d.turnId === c.id && c.hp > 0, title: `${c.name} (${c.hp}/${c.max_hp} PF)`, cls: 'pc' + (me ? ' me' : '') + (c.data?.companion ? ' comp' : '') + (c.hp <= 0 ? ' down' : ''), body: `${shadow}<circle r="${SIZE * 0.68}"/><circle r="${SIZE * 0.5}" class="inner"/><text class="ini" y="1">${initials(c.name)}</text>${hpBar(c.hp, c.max_hp)}` });
+      toks.push({ id: c.id, col: c.col, row: c.row, z: 3, kind: 'pc', sel: s, turn: d.turnId === c.id && c.hp > 0, stati: c.hp > 0 ? statiIcons(c) : '', title: `${c.name} (${c.hp}/${c.max_hp} PF)`, cls: 'pc' + (me ? ' me' : '') + (c.data?.companion ? ' comp' : '') + (c.hp <= 0 ? ' down' : ''), body: `${shadow}<circle r="${SIZE * 0.68}"/><circle r="${SIZE * 0.5}" class="inner"/><text class="ini" y="1">${initials(c.name)}</text>${hpBar(c.hp, c.max_hp)}` });
     });
     html += '<g class="tokens">' + toks.sort((a, b) => a.z - b.z).map(t => { const [cx, cy] = center(t.col, t.row, SIZE); return token(t, cx, cy); }).join('') + '</g>';
 

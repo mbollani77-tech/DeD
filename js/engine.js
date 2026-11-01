@@ -2,7 +2,7 @@
 import { update, say, setCampaignState } from './db.js';
 import { hexesFor } from './rules.js';
 import { resetEco } from './economia.js';
-import { monsterAutoTurn, regenMana } from './combat.js';
+import { monsterAutoTurn, regenMana, turnStart } from './combat.js';
 import { companionTurn } from './ai.js';
 import { isCoop } from './combatflow.js';
 
@@ -20,8 +20,13 @@ export async function stepTurn(store) {
   const st = store.campaign.state || {}; const init = st.init || [];
   let turn = st.turn || 0, round = st.round || 1, newRound = false;
   const alive = i => i.k === 'c' ? (store.characters.find(c => c.id === i.id)?.hp ?? 0) > 0 : !!store.entities.find(e => e.id === i.id && !e.data.dead);
-  for (let g = 0; g < init.length; g++) { turn++; if (turn >= init.length) { turn = 0; round++; newRound = true; } if (alive(init[turn])) break; }
-  if (newRound) { await resetMoves(store); say(store, 'Master', 'event', `Inizia il round ${round}.`); }
+  for (let g = 0; g < init.length * 2; g++) {
+    turn++; if (turn >= init.length) { turn = 0; round++; newRound = true; await resetMoves(store); say(store, 'Master', 'event', `Inizia il round ${round}.`); }
+    if (!alive(init[turn])) continue;
+    const { skip } = await turnStart(store, init[turn]); // danni degli stati, turni persi
+    if (skip || !alive(init[turn])) continue;
+    break;
+  }
   await setCampaignState(store, { turn, round });
   const cur = init[turn]; if (cur) say(store, 'Master', 'event', `Tocca a ${cur.name}${cur.k === 'e' ? ' (mostro)' : ''}.`);
   if (cur?.k === 'c') { const c = store.characters.find(x => x.id === cur.id); if (c) await regenMana(store, c); } // a ogni suo turno recupera un po' di mana

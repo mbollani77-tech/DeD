@@ -7,7 +7,7 @@ import { buildDungeon } from './dungeon.js';
 import { partyLevel } from './engine.js';
 import { key, dist, neighbors, inBounds } from './hex.js';
 import { pick } from './dice.js';
-import { hexesFor } from './rules.js';
+import { hexesFor, FRUTTI } from './rules.js';
 
 export async function createGenerated(store, n, link, opts = {}, ui = {}) {
   const cid = store.campaign.id; const toast = (...a) => ui.toast?.(...a); const entsIn = r => store.entities.filter(e => e.room_id === r.id);
@@ -33,7 +33,7 @@ export async function createWorldCampaign(store, cfg, ui = {}) {
   const cid = store.campaign.id; const toast = (...a) => ui.toast?.(...a);
   const ds = ['facile', 'normale', 'difficile', 'mortale'];
   toast('Creo il mondo…');
-  const w = generateWorld({ cols: cfg.cols, rows: cfg.rows, towns: cfg.towns, dungeons: cfg.levels.length, oases: cfg.oases ?? 2 });
+  const w = generateWorld({ cols: cfg.cols, rows: cfg.rows, towns: cfg.towns, dungeons: cfg.levels.length, oases: cfg.oases ?? 2, trees: cfg.trees ?? 3 });
   const base = Math.max(0, ...store.rooms.map(r => r.sort)) + 1;
   const world = await insert(store, 'rooms', { campaign_id: cid, name: 'Mappa del mondo', cols: w.cols, rows: w.rows, fog: false, cells: w.cells, meta: w.meta, sort: base });
   const placeKeys = new Set(w.places.map(p => key(p.col, p.row)));
@@ -50,6 +50,7 @@ export async function createWorldCampaign(store, cfg, ui = {}) {
     t.npcs.forEach(x => rowsE.push({ campaign_id: cid, room_id: tr.id, kind: 'npc', name: x.name, col: x.col, row: x.row, hidden: false, data: { role: x.role } }));
   }
   w.places.filter(p => p.tipo === 'oasi').forEach(p => rowsE.push({ campaign_id: cid, room_id: world.id, kind: 'door', name: oasisName(p.order), col: p.col, row: p.row, hidden: false, data: { place: 'oasi', icon: '🌴', locked: false } }));
+  w.places.filter(p => p.tipo === 'albero').forEach(p => rowsE.push({ campaign_id: cid, room_id: world.id, kind: 'door', name: FRUTTI[p.frutto].albero, col: p.col, row: p.row, hidden: false, data: { place: 'albero', icon: FRUTTI[p.frutto].icona, frutto: p.frutto, locked: false } }));
   await insertMany(store, 'entities', rowsE);
   const dung = w.places.filter(x => x.tipo === 'dungeon').sort((a, b) => a.order - b.order);
   for (const [i, tid] of cfg.levels.entries()) {

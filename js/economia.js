@@ -14,6 +14,10 @@ const FRESH = {
   schiva: 0,     // 1 = Schivare attivo (svantaggio a chi attacca, vantaggio ai TS di Destrezza)
   disimp: 0,     // 1 = Disimpegno attivo (niente attacchi di opportunità)
   aiuto: 0,      // 1 = ha ricevuto Aiuto (vantaggio al prossimo attacco)
+  pw: 0,         // 1 = ha già usato il potere unico in questo scontro
+  pot: null,     // potere in corso: { adv, dmg, nome } per il prossimo attacco con un'arma
+  scudo: 0,      // bonus alla CA (potere) fino al prossimo round
+  res: [],       // resistenze temporanee (potere) fino al prossimo round
 };
 
 export const tableOf = o => (o.kind ? 'entities' : 'characters');

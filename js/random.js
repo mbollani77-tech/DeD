@@ -20,7 +20,8 @@ export function parseItems(text = '') {
 }
 
 export function monsterFromPreset(p, nome) {
-  return { kind: 'monster', name: nome || p.nome, data: { preset: p.id, cr: p.cr, hp: p.hp, maxHp: p.hp, ac: p.ac, speed: p.speed, atk: p.atk, dado: p.dado, gittata: p.gittata, dex: p.dex, xp: p.xp, dead: false } };
+  return { kind: 'monster', name: nome || p.nome, data: { preset: p.id, cr: p.cr, hp: p.hp, maxHp: p.hp, ac: p.ac, speed: p.speed, atk: p.atk, dado: p.dado, gittata: p.gittata, dex: p.dex, xp: p.xp, dead: false,
+    ...Object.fromEntries(['imm', 'res', 'vul', 'immSt', 'tipo', 'stato', 'statoChance'].filter(k => p[k] !== undefined).map(k => [k, p[k]])) } };
 }
 export function randomMonster(level = 1, only = null) {
   const max = crMax(level); const all = only?.length ? BESTIARY.filter(m => only.includes(m.id)) : BESTIARY;
@@ -42,7 +43,7 @@ export function randomTreasure(level = 1) {
 
 const scaleDado = (d, m) => d.replace(/^(\d+)d(\d+)/, (_, n, s) => `${n * m}d${s}`);
 export function trapFromPreset(p, level = 1) {
-  return { kind: 'trap', name: p.nome, hidden: true, data: { desc: p.desc, detect: p.detect + Math.floor(level / 3), disarm: p.disarm + Math.floor(level / 3), save: p.save, dc: p.dc + Math.floor(level / 3), dado: scaleDado(p.dado, 1 + Math.floor(level / 5)), half: p.half, armed: true, reusable: false } };
+  return { kind: 'trap', name: p.nome, hidden: true, data: { desc: p.desc, detect: p.detect + Math.floor(level / 3), disarm: p.disarm + Math.floor(level / 3), save: p.save, dc: p.dc + Math.floor(level / 3), dado: scaleDado(p.dado, 1 + Math.floor(level / 5)), half: p.half, armed: true, reusable: false, ...(p.tipo ? { tipo: p.tipo } : {}), ...(p.stato ? { stato: p.stato } : {}) } };
 }
 export const randomTrap = (level = 1) => trapFromPreset(pick(TRAPS), level);
 

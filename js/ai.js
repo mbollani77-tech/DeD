@@ -1,6 +1,8 @@
 // Il turno di un compagno controllato dal gioco: cura chi sta male, beve una pozione, si avvicina e attacca.
 import { weaponAttack, castSpell, moveCharacter, blockedSet, useItem, liveMonsters } from './combat.js';
 import { weaponCheck, spellCheck, manaOf, spellCost, hexesFor } from './rules.js';
+import { powerFor, powerBlocked, usePower } from './powers.js';
+import { statiOf } from './status.js';
 import { reachable, dist, los } from './hex.js';
 import { weaponSlot, spellSlot, getEco } from './economia.js';
 
@@ -19,9 +21,25 @@ export async function companionTurn(store, room, comp) {
   };
   const approach = async target => { let best = null; for (const [k, c] of reach()) { const p = { col: +k.split(',')[0], row: +k.split(',')[1] }; const d = dist(p, target); if (!best || d < best.d || (d === best.d && c < best.c)) best = { p, d, c }; } if (best && best.d < dist(comp, target)) await goTo(best.p, best.c); };
 
+  // 0) il potere unico, se la situazione lo merita
+  const pw = powerFor(comp);
+  if (pw && !powerBlocked(store, comp)) {
+    const fs = foes(); const nearN = r => fs.filter(f => dist(f, comp) <= r).length; const hurtAlly = allies().some(c => c.hp < c.max_hp * 0.5 && dist(c, comp) <= hexesFor(30));
+    const use = pw.tipo === 'cura' ? hurtAlly : pw.tipo === 'scudo' ? comp.hp < comp.max_hp * 0.6 && nearN(3) > 0 : pw.tipo === 'esplosione' ? nearN(3) >= 2 || (nearN(3) >= 1 && fs.some(f => f.data.boss))
+      : pw.tipo === 'terrore' ? nearN(5) >= 2 : pw.tipo === 'colpo' ? fs.some(f => dist(f, comp) <= hexesFor(comp.data.armi?.[0]?.gittata || 5) + comp.move_left) : fs.every(f => dist(f, comp) > comp.move_left + 1);
+    if (use) { try { await usePower(store, comp, { auto: true }); } catch { /* niente */ } }
+  }
   // 1) bere una pozione se sta davvero male
   if (comp.hp < comp.max_hp * 0.35) { const i = (comp.data.oggetti || []).findIndex(o => o.cura); if (i >= 0) { try { await useItem(store, comp, i); return; } catch { /* niente */ } } }
 
+  // 1b) liberare un alleato da veleno, fiamme, paura, maledizione...
+  const rim = (comp.data.magie || []).filter(s => s.tipo === 'rimedio' && spellCheck(comp, s).ok && manaOf(comp) >= spellCost(s) && spellSlot(comp, s));
+  const bad = rim.length ? allies().find(c => statiOf(c).some(st => rim.some(sp => sp.rimedio.includes(st.id)))) : null;
+  if (bad) {
+    const sp = rim.find(s => statiOf(bad).some(st => s.rimedio.includes(st.id))); const range = hexesFor(sp.gittata);
+    if (dist(comp, bad) > range) { const n = near(bad, range, false); if (n) await goTo(n.p, n.cost); else await approach(bad); }
+    if (dist(comp, bad) <= range) { try { await castSpell(store, comp, sp, { col: bad.col, row: bad.row }, room, null, true); return; } catch { /* prova ad attaccare */ } }
+  }
   // 2) curare chi ha meno del 50% dei punti ferita
   const heals = (comp.data.magie || []).filter(s => s.tipo === 'cura' && spellCheck(comp, s).ok && manaOf(comp) >= spellCost(s) && spellSlot(comp, s));
   const hurt = allies().filter(c => c.hp < c.max_hp * 0.5).sort((a, b) => a.hp / a.max_hp - b.hp / b.max_hp)[0];

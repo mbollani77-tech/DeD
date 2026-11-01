@@ -326,3 +326,47 @@ dialog.dlg.wz { width: min(760px, 96vw); }
 .comps { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .35rem; } .comps li { display: flex; justify-content: space-between; align-items: center; gap: .6rem; } .comps small { display: block; color: var(--muted); font-size: .78rem; }
 
 .tok.treasure.locked { filter: drop-shadow(0 0 5px #f4d58d); }
+
+/* creazione del personaggio */
+dialog.dlg.cc { width: min(860px, 96vw); } .cc .dlg-form { padding: 1.1rem 1.2rem; } .cc h2 { margin: 0 0 .6rem; }
+.cc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .8rem; } .cc-note { background: var(--mist); border-radius: 10px; padding: .5rem .75rem; margin: 0 0 .7rem; font-size: .9rem; } .cc .bonus { background: var(--teal-l); color: var(--teal-d); border-radius: 99px; padding: 0 .5rem; font-weight: 700; white-space: nowrap; }
+.cc-rollrow { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; margin-bottom: .7rem; } .cc-chip { display: inline-block; background: var(--mist); border-radius: 99px; padding: .1rem .6rem; font-size: .82rem; font-weight: 600; border: 1px solid transparent; }
+.cc-chip.pickable { cursor: pointer; background: #fff; border-color: var(--line); } .cc-chip.pickable.on { background: var(--teal-l); border-color: var(--teal); color: var(--teal-d); }
+.cc-chip.race { background: #fbe9c4; color: #7a5114; } .cc-chip.cls { background: var(--teal-l); color: var(--teal-d); }
+.cc-sheet { max-height: 46vh; overflow: auto; padding: .1rem .2rem; } .cc-sheet h4 { margin: .8rem 0 .3rem; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); } .cc-empty { text-align: center; padding: 1.4rem .5rem; color: var(--muted); } .cc-dice { font-size: 2.2rem; animation: dshake .15s linear infinite; }
+.cc-stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: .4rem; } .cc-st { background: #fff; border: 1px solid var(--line); border-top: 3px solid var(--line); border-radius: 10px; text-align: center; padding: .3rem 0 .25rem; line-height: 1.1; }
+.cc-st span { display: block; font-size: .66rem; font-weight: 700; letter-spacing: .06em; color: var(--muted); } .cc-st b { display: block; font-size: 1.5rem; } .cc-st small { display: block; color: var(--ink-2); font-weight: 700; } .cc-st i { display: block; font-style: normal; font-size: .72rem; color: var(--muted); margin-top: .1rem; } .cc-st i u { text-decoration: none; background: #fbe9c4; color: #7a5114; border-radius: 99px; padding: 0 .3rem; font-weight: 700; }
+.cc-st.has-bonus { border-top-color: var(--ochre); background: #fffaf0; } .cc-st.main { border-color: var(--teal); border-top-color: var(--teal); box-shadow: 0 0 0 1px var(--teal) inset; }
+.cc-vit { display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; margin: .6rem 0 0; font-size: .92rem; } .cc-vit b { font-size: 1.1rem; } .cc-vit .mn b { color: #2a5a9a; }
+.cc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 1rem; } .cc-cols ul, .cc-traits { margin: 0; padding-left: 1.1rem; font-size: .9rem; } .cc-chips { display: flex; flex-wrap: wrap; gap: .3rem; } .cc-traits li.race b { color: #7a5114; } .cc-traits li.cls b { color: var(--teal-d); }
+@media (max-width: 640px) { .cc-grid, .cc-cols { grid-template-columns: 1fr; } .cc-stats { grid-template-columns: repeat(3, 1fr); } }
+/* scheda: bonus razziali, abilità, talenti */
+.ab.rb { border-top-color: var(--ochre); background: #fffaf0; } .ab u { text-decoration: none; margin-left: .2rem; font-size: .62rem; background: #fbe9c4; color: #7a5114; border-radius: 99px; padding: 0 .25rem; font-weight: 700; }
+.skills, .talents { font-size: .88rem; } .skills > summary, .talents > summary, .sk-all > summary { cursor: pointer; font-weight: 700; } .sk-prof, .sk-list { display: flex; flex-wrap: wrap; gap: .3rem; margin: .4rem 0; }
+.sk { background: var(--mist); border-radius: 99px; padding: .05rem .55rem; font-size: .8rem; } .sk b { margin-left: .15rem; } .sk.on { background: #fbe9c4; color: #5a3d0a; font-weight: 600; box-shadow: 0 0 0 1px #e8c27a inset; }
+.talents ul { margin: .3rem 0 0; padding-left: 1.1rem; } .talents li.race b { color: #7a5114; } .talents li.cls b { color: var(--teal-d); }
+
+.cc input, .cc select { border: 1px solid var(--line); border-radius: 10px; padding: .5rem .7rem; font: inherit; background: #fff; width: 100%; } .cc .fld label { font-weight: 600; font-size: .9rem; } .cc-legend { margin: 0 0 .3rem; font-size: .8rem; }
+
+/* creazione: animazione dei dadi e caratteristiche importanti per la classe */
+.cc-dice6 { display: grid; grid-template-columns: repeat(6, 1fr); gap: .5rem; margin: .5rem 0; } .cc-dtile { text-align: center; } .cc-dtile span { display: block; font-size: .7rem; font-weight: 700; letter-spacing: .06em; color: var(--muted); } .cc-dtile em, .cc-st em { display: block; font-style: normal; font-size: .64rem; font-weight: 700; margin-top: .1rem; min-height: .9rem; }
+.cc-die { width: 62px; height: 62px; margin: .25rem auto; border-radius: 14px; background: linear-gradient(145deg, #fff, #e8efec); border: 2px solid #8fa3ad; box-shadow: 0 6px 10px #0003, 0 -2px 0 #0001 inset; display: grid; place-items: center; animation: ccroll .45s linear infinite; }
+.cc-die b { font-size: 1.7rem; font-weight: 800; color: #1d2a33; } .cc-dtile.landed .cc-die { animation: ccland .35s ease-out; border-color: var(--teal); background: linear-gradient(145deg, #fff, #d5efe9); }
+.cc-dtile.r-main .cc-die { box-shadow: 0 0 0 3px #bd832966, 0 6px 10px #0003; } .cc-dtile.r-main em, .cc-st.r-main em { color: #8a5a0a; } .cc-dtile.r-high em, .cc-st.r-high em { color: var(--teal-d); } .cc-dtile.r-mid em, .cc-st.r-mid em { color: var(--muted); }
+@keyframes ccroll { 0% { transform: rotate(-14deg) translateY(-3px); } 50% { transform: rotate(14deg) translateY(3px); } 100% { transform: rotate(-14deg) translateY(-3px); } } @keyframes ccland { 0% { transform: scale(1.35) rotate(18deg); } 60% { transform: scale(.94) rotate(-4deg); } 100% { transform: scale(1) rotate(0); } }
+.cc-st.r-main { border-color: #bd8329; border-top-color: #bd8329; background: #fff7e3; box-shadow: 0 0 0 2px #e8c27a inset; } .cc-st.r-high { border-color: var(--teal); border-top-color: var(--teal); background: #eef8f5; } .cc-st.r-mid { border-top-color: #9fd0c6; }
+.cc-st.has-bonus.r-none { border-top-color: var(--ochre); } .cc-why { background: #fffaf0; border: 1px solid #f0dca8; border-radius: 10px; padding: .45rem .7rem; font-size: .88rem; margin: 0 0 .5rem; } .cc-need p { margin: .3rem 0; }
+@media (prefers-reduced-motion: reduce) { .cc-die { animation: none; } }
+@media (max-width: 640px) { .cc-dice6 { grid-template-columns: repeat(3, 1fr); } }
+
+/* potere unico */
+.actionpanel .btn.power { background: linear-gradient(135deg, #5b3da6, #8a5bd8); border-color: #c8b0ff; color: #fff; font-weight: 700; text-align: left; } .actionpanel .btn.power:disabled { background: #ffffff0f; border-color: #ffffff22; color: #cfdcd7; }
+.actionpanel .btn.power small { display: block; font-weight: 400; font-size: .72rem; opacity: .85; }
+.cc-power, .power-card { background: linear-gradient(135deg, #f1ebff, #fbf7ff); border: 1px solid #cdb8f5; border-radius: 12px; padding: .5rem .8rem; } .cc-power p, .power-card p { margin: .2rem 0 0; font-size: .88rem; } .power-card strong { color: #4b2c94; }
+
+/* stati e difese */
+.statuses, .defs { display: flex; flex-wrap: wrap; gap: .3rem; margin: .2rem 0; } .status, .def { display: inline-flex; align-items: baseline; gap: .3rem; border-radius: 99px; padding: .1rem .6rem; font-size: .82rem; font-weight: 600; } .status small, .def small { font-weight: 400; font-size: .7rem; opacity: .75; }
+.status { background: #fbe0dd; color: #8a2a24; box-shadow: 0 0 0 1px #e6a7a1 inset; animation: stpulse 1.6s ease-in-out infinite; } @keyframes stpulse { 50% { box-shadow: 0 0 0 2px #e6a7a1 inset; } }
+.def.res { background: #e3f1ee; color: var(--teal-d); } .def.imm { background: #dfe8fb; color: #2a4a8a; } .def.st { background: #efe6fb; color: #4b2c94; } .def.vul { background: #fbe0dd; color: #8a2a24; }
+.tok .stico { font-size: 11px; text-anchor: middle; pointer-events: none; paint-order: stroke; stroke: #0007; stroke-width: 2px; }
+@media (prefers-reduced-motion: reduce) { .status { animation: none; } }

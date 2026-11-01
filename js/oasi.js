@@ -9,6 +9,7 @@ import { ITEMS, maxMana, manaOf, scrollItem } from './rules.js';
 import { randomTreasure, randomChestQuest } from './random.js';
 import { startEncounter, peacefulMeeting } from './journey.js';
 import { companionsOf, MAX_COMPANIONS } from './companions.js';
+import { cureStatus } from './status.js';
 
 /** La tabella del d20: (da, a, esito, descrizione). */
 export const TABELLA = [
@@ -28,6 +29,7 @@ async function riposa(store, ch, door, done, motivo) {
   const last = ch.data.oasi?.[door.id]; if (last !== undefined && last >= done) return toast('Hai già riposato qui: l\'acqua si rinnova quando finirete un dungeon.');
   await update(store, 'characters', ch.id, { hp: ch.max_hp, data: { ...ch.data, mana: maxMana(ch), oasi: { ...(ch.data.oasi || {}), [door.id]: done } } });
   say(store, ch.name, 'event', `${ch.name} riposa all'oasi «${door.name}»${motivo ? ` (${motivo})` : ''}: punti ferita e mana tornano al massimo.`);
+  await cureStatus(store, store.characters.find(c => c.id === ch.id), 'comuni', 'l\'acqua dell\'oasi'); // la maledizione resta
 }
 
 /** Un forziere (chiuso da una quest, oppure aperto) vicino all'oasi. */
@@ -57,7 +59,7 @@ export async function enterOasi(store, ch, door) {
     if (nome === 'viandante' && companionsOf(store, ch).length < MAX_COMPANIONS) await peacefulMeeting(store, ch, room, { col: door.col, row: door.row });
     if (nome === 'miracolo') {
       await forziere(store, room, door, level, { chiuso: false, raro: true });
-      for (const c of store.characters.filter(x => x.room_id === room.id && dist(x, door) <= 5)) await update(store, 'characters', c.id, { hp: c.max_hp, data: { ...c.data, mana: maxMana(c), oasi: { ...(c.data.oasi || {}), [door.id]: done } } });
+      for (const c of store.characters.filter(x => x.room_id === room.id && dist(x, door) <= 5)) { await update(store, 'characters', c.id, { hp: c.max_hp, data: { ...c.data, mana: maxMana(c), oasi: { ...(c.data.oasi || {}), [door.id]: done } } }); await cureStatus(store, store.characters.find(x => x.id === c.id), 'tutti', 'acqua miracolosa'); }
       return say(store, ch.name, 'event', 'L\'acqua miracolosa guarisce tutto il gruppo: punti ferita e mana al massimo per chi è vicino!');
     }
     if (nome === 'secca') return;

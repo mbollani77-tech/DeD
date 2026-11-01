@@ -1,9 +1,11 @@
 // Gli abitanti dei paesi: l'oste fa riposare, il mercante compra e vende, gli altri raccontano voci e danno incarichi.
 import { update, remove, say, setCampaignState } from './db.js';
+import { cureStatus, statiOf, COMUNI } from './status.js';
 import { ask, esc, toast } from './ui.js';
 import { WEAPONS, SPELLS, CLASSES, SCROLL_PRICE, WEAPON_REQ, STAT_NAME, levelForSpell, weaponCheck, spellCheck, maxMana, manaOf, mod } from './rules.js';
 import { pick } from './dice.js';
 import { rollD20M } from './rolls.js';
+import { skillBonus } from './skills.js';
 import { makeCandidate, hireCompanion, hirePrice, companionsOf, MAX_COMPANIONS } from './companions.js';
 
 const SHOP_ITEMS = [
@@ -13,8 +15,15 @@ const SHOP_ITEMS = [
   { nome: 'Corda di canapa', desc: '15 metri, resistente.', prezzo: 2 },
   { nome: 'Fiala di acido', desc: 'Da lanciare: 2d6 danni (usala come arma personalizzata).', prezzo: 25 },
   { nome: 'Razioni da viaggio', desc: 'Cibo per un giorno di cammino.', prezzo: 1 },
+  { nome: 'Pozione di mana', desc: 'Restituisce 10 punti di mana.', mana: 10, prezzo: 40 },
+  { nome: 'Antidoto', desc: 'Toglie l\'avvelenamento.', rimedio: ['veleno'], prezzo: 20 },
+  { nome: 'Unguento lenitivo', desc: 'Spegne le fiamme e cura le ustioni.', rimedio: ['bruciatura'], prezzo: 20 },
+  { nome: 'Brodo caldo', desc: 'Scioglie il gelo dalle ossa.', rimedio: ['congelamento'], prezzo: 5 },
+  { nome: 'Acqua santa', desc: 'Scaccia maledizioni e paure.', rimedio: ['maledizione', 'paura'], prezzo: 60 },
+  { nome: 'Pozione di resistenza al fuoco', desc: 'Resisti al fuoco per tutto lo scontro.', resTemp: 'fuoco', prezzo: 50 },
+  { nome: 'Pozione di resistenza al gelo', desc: 'Resisti al gelo per tutto lo scontro.', resTemp: 'gelo', prezzo: 50 },
 ];
-const WEAPON_PRICE = { pugnale: 2, 'spada-corta': 10, 'ascia-manesca': 5, mazza: 5, bastone: 1, stocco: 25, 'spada-lunga': 15, spadone: 50, 'ascia-bipenne': 30, giavellotto: 5, 'arco-corto': 25, 'arco-lungo': 50, balestra: 25 };
+const WEAPON_PRICE = { dardo: 1, scimitarra: 25, pugnale: 2, 'spada-corta': 10, 'ascia-manesca': 5, mazza: 5, bastone: 1, stocco: 25, 'spada-lunga': 15, spadone: 50, 'ascia-bipenne': 30, giavellotto: 5, 'arco-corto': 25, 'arco-lungo': 50, balestra: 25 };
 const SELL_KNOWN = { 'Pozione di cura': 12, 'Pozione di cura maggiore': 45, 'Gemma di quarzo': 50, 'Anello d\'argento': 40, 'Pugnale +1': 60, 'Amuleto runico': 80 };
 
 const oroOf = ch => ch.data.oro || 0;
@@ -35,12 +44,13 @@ async function inn(store, ch, npc) {
   const a = await ask({ title: npc.name, ok: 'Avanti', intro: `Hai ${oroOf(ch)} monete d'oro.`, fields: [{ name: 'az', label: 'Cosa desideri?', type: 'select', value: 'riposo', options: [{ v: 'riposo', l: `Passare la notte (${cost} mo): recuperi punti ferita e mana` }, { v: 'assumi', l: 'Assumere un avventuriero come compagno' }] }] });
   if (!a) return;
   if (a.az === 'assumi') return hireAtInn(store, ch, npc);
-  if (ch.hp >= ch.max_hp && manaOf(ch) >= maxMana(ch)) return toast(`${npc.name}: «Hai un bell'aspetto! Torna quando sarai stanco.»`);
+  if (ch.hp >= ch.max_hp && manaOf(ch) >= maxMana(ch) && !statiOf(ch).some(s => COMUNI.includes(s.id))) return toast(`${npc.name}: «Hai un bell'aspetto! Torna quando sarai stanco.»`);
   const v = await ask({ title: npc.name, ok: `Riposa (${cost} mo)`, cancel: 'No, grazie', intro: `«Un letto caldo e una zuppa: ${cost} monete d'oro per la notte.» Recuperi tutti i punti ferita e il mana. Hai ${oroOf(ch)} monete d'oro.`, fields: [] });
   if (!v) return;
   if (oroOf(ch) < cost) throw new Error('Non hai abbastanza monete d\'oro.');
   await give(store, ch, { hp: ch.max_hp, data: { ...ch.data, oro: oroOf(ch) - cost, mana: maxMana(ch) } });
   say(store, ch.name, 'event', `${ch.name} passa la notte alla locanda (${cost} mo) e si risveglia in piena forma.`);
+  await cureStatus(store, store.characters.find(c => c.id === ch.id), 'comuni', 'dopo una bella dormita'); // la maledizione però resta
 }
 
 /** Alla locanda c'è sempre qualche avventuriero in cerca di ingaggio, a pagamento (40 mo per livello, una volta sola). */
@@ -66,9 +76,9 @@ async function recruit(store, ch, npc) {
   const story = npc.data.role === 'prigioniero' ? `«${npc.name} è incatenato, ma ha l'aria di saper combattere.» Se lo convinci, ti seguirà.` : `«Un viaggiatore solitario cerca compagnia sulla strada.» Se lo convinci, ti seguirà.`;
   const v = await ask({ title: `${npc.name}, ${cls.nome} di livello ${cand.level}`, ok: 'Prova a convincerlo', cancel: 'Lascia stare',
     intro: `${story}<br>Difficoltà della prova: <b>${dc}</b>${npc.data.fails ? ` (ha già rifiutato ${npc.data.fails} ${npc.data.fails === 1 ? 'volta' : 'volte'})` : ''}.`,
-    fields: [{ name: 'stat', label: 'Come lo convinci?', type: 'select', value: mod(ch.stats.car) >= mod(ch.stats.int) ? 'car' : 'int', options: [{ v: 'car', l: `Carisma — persuaderlo (${fmt(mod(ch.stats.car))})` }, { v: 'int', l: `Intelligenza — con la logica e le giuste parole (${fmt(mod(ch.stats.int))})` }] }] });
+    fields: [{ name: 'stat', label: 'Come lo convinci?', type: 'select', value: skillBonus(ch, 'persuasione') >= skillBonus(ch, 'indagare') ? 'car' : 'int', options: [{ v: 'car', l: `Carisma — persuaderlo, Persuasione (${fmt(skillBonus(ch, 'persuasione'))})` }, { v: 'int', l: `Intelligenza — con la logica, Indagare (${fmt(skillBonus(ch, 'indagare'))})` }] }] });
   if (!v) return;
-  const bonus = mod(ch.stats[v.stat]); const r = await rollD20M(bonus, null, `${ch.name}: prova di ${v.stat === 'car' ? 'Carisma' : 'Intelligenza'} per convincere ${npc.name} (CD ${dc})`);
+  const bonus = skillBonus(ch, v.stat === 'car' ? 'persuasione' : 'indagare'); const r = await rollD20M(bonus, null, `${ch.name}: prova di ${v.stat === 'car' ? 'Carisma' : 'Intelligenza'} per convincere ${npc.name} (CD ${dc})`);
   const ok = r.crit || (!r.fumble && r.total >= dc);
   if (ok) { await remove(store, 'entities', npc.id); await hireCompanion(store, store.characters.find(x => x.id === ch.id), cand); return; }
   const fails = (npc.data.fails || 0) + 1;

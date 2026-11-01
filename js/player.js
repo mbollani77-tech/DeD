@@ -10,10 +10,15 @@ import { mountDicebar } from './dicebar.js';
 import { setMood, onLog, moodFor, play, soundDialog, soundOn } from './sound.js';
 import { talkTo, questsHtml, learnSpell } from './town.js';
 import { enterOasi } from './oasi.js';
+import { raccogli } from './alberi.js';
 import { spendPoints } from './levelup.js';
 import { runAutoMonsters, endTurn, skipTurn, partyLevel } from './engine.js';
 import { startAdventure } from './adventure.js';
-import { companionsOf, dismissCompanion, MAX_COMPANIONS } from './companions.js';
+import { companionsOf, dismissCompanion, buildSheet, MAX_COMPANIONS } from './companions.js';
+import { characterDialog } from './charcreate.js';
+import { powerFor, powerBlocked, usePower } from './powers.js';
+import { STATI, TIPI, statiOf, defenseList } from './status.js';
+import { skillList, RACE_TRAITS, CLASS_FEATURES, racialBonus, checkBonus } from './skills.js';
 import { dungeonWizard } from './wizard.js';
 import { xpToNext } from './combat.js';
 import { key, dist, neighbors, inBounds, reachable, hexesWithin, los } from './hex.js';
@@ -161,6 +166,7 @@ function renderActionbar(ch) {
     + (armi ? `<div class="grp"><h4>Armi</h4>${armi}</div>` : '')
     + (magie ? `<div class="grp"><h4>Magie</h4>${magie}</div>` : '')
     + `<div class="grp"><h4>Azioni</h4><div class="two">${act('scatto', 'Scatta', e.az, 'Azione: raddoppia il movimento del round')}${act('schiva', 'Schiva', e.az, 'Azione: svantaggio a chi ti attacca, vantaggio ai tiri salvezza di Destrezza')}${act('disimp', 'Disimpegnati', e.az, 'Azione: ti muovi senza subire attacchi di opportunità')}${act('aiuto', 'Aiuta', e.az, 'Azione: il prossimo attacco di un compagno ha vantaggio')}</div></div>`
+    + (() => { const pw = powerFor(ch); if (!pw) return ''; const why = powerBlocked(store, ch); return `<div class="grp"><h4>Potere unico</h4><button class="btn power" data-act="power" ${why ? 'disabled' : ''} title="${esc(pw.riassunto + (why ? ' — ' + why : ''))}">${esc(pw.nome)}<small>${why ? esc(why) : 'azione bonus · una volta per scontro'}</small></button></div>`; })()
     + (isRogue(ch) ? `<div class="grp"><h4>Azione bonus</h4><div class="two">${act('scaltra-scatto', 'Scatta', e.bo, 'Azione scaltra del Ladro')}${act('scaltra-disimp', 'Disimpegnati', e.bo, 'Azione scaltra del Ladro')}</div></div>` : '')
     + `<div class="grp"><h4>Reazione</h4>${mode('', m.t === 'reaz', 'data-t="reaz"', 'Attacco di opportunità', '', !!e.re)}</div>`
     + `<div class="grp"><h4>Tiro</h4><select data-pick="adv" aria-label="Vantaggio o svantaggio"><option value="" ${!S.adv ? 'selected' : ''}>Tiro normale</option><option value="adv" ${S.adv === 'adv' ? 'selected' : ''}>Vantaggio</option><option value="dis" ${S.adv === 'dis' ? 'selected' : ''}>Svantaggio</option></select></div>`;
@@ -184,12 +190,17 @@ function renderPanel(ch) {
 const meter = (hp, max) => `<div class="meter ${hp / max < 0.34 ? 'low' : ''}" role="img" aria-label="${hp} punti ferita su ${max}"><i style="width:${Math.max(0, Math.min(100, (hp / max) * 100))}%"></i></div>`;
 function tabScheda(ch) {
   const cast = ch.data.cast; const pb = prof(ch.level);
-  const ab = ([k, l]) => { const mm = mod(ch.stats[k]); return `<div class="ab" title="${l} ${ch.stats[k]}"><span>${l.slice(0, 3).toUpperCase()}</span><b class="${mm < 0 ? 'neg' : ''}">${fmtMod(mm)}</b><small>${ch.stats[k]}</small></div>`; };
+  const ab = ([k, l]) => { const mm = mod(ch.stats[k]); const rb = racialBonus(ch.data.raceId, k); return `<div class="ab ${rb ? 'rb' : ''}" title="${l} ${ch.stats[k]}${rb ? ` (di cui +${rb} dalla razza)` : ''}"><span>${l.slice(0, 3).toUpperCase()}${rb ? `<u>+${rb}</u>` : ''}</span><b class="${mm < 0 ? 'neg' : ''}">${fmtMod(mm)}</b><small>${ch.stats[k]}</small></div>`; };
   return `<div class="sheet"><div class="sheet-head"><h2>${esc(ch.name)}</h2><p class="muted">${esc(ch.race)} ${esc(ch.class)} · livello ${ch.level}${ch.player ? ` · ${esc(ch.player)}` : ''}</p></div>
   <div class="hp"><span>PF</span>${meter(ch.hp, ch.max_hp)}<em>${ch.hp} / ${ch.max_hp}</em></div>
   ${maxMana(ch) ? `<div class="hp mana"><span>Mana</span><div class="manameter"><i style="width:${Math.round(manaOf(ch) / maxMana(ch) * 100)}%"></i></div><em>${manaOf(ch)} / ${maxMana(ch)}</em></div>` : ''}
+  ${(() => { const st = statiOf(ch); return st.length ? `<div class="statuses">${st.map(s => { const d = STATI[s.id]; return `<span class="status" title="${esc(d.desc + (d.cura ? ' Cura: ' + d.cura + '.' : ''))}">${d.icona} ${esc(d.nome)}${s.id === 'resistenza' ? ' al ' + esc((TIPI[s.tipo] || [''])[0].toLowerCase()) : ''}<small>${s.turni >= 99 ? 'finché non guarisci' : s.turni + (s.turni === 1 ? ' turno' : ' turni')}</small></span>`; }).join('')}</div>` : ''; })()}
   <div class="vitals"><div class="vital"><b>${ch.ac}</b><span>CA</span></div><div class="vital"><b>${ch.speed}<small>ft</small></b><span>${hexesFor(ch.speed)} esagoni</span></div><div class="vital"><b>${fmtMod(pb)}</b><span>Competenza</span></div><div class="vital"><b>${fmtMod(mod(ch.stats.des))}</b><span>Iniziativa</span></div></div>
   <div class="abilities">${STATS.map(ab).join('')}</div>
+  ${(() => { const sk = skillList(ch); const pr = sk.filter(x => x.prof); return `<details class="skills" open><summary>Abilità <span class="muted">(${pr.length} competenze)</span></summary><div class="sk-prof">${pr.map(x => `<span class="sk on" title="${esc(x.nome)}: ${STAT_NAME[x.stat]} + competenza">${esc(x.nome)} <b>${fmtMod(x.bonus)}</b></span>`).join('')}</div><details class="sk-all"><summary>Tutte le abilità</summary><div class="sk-list">${sk.filter(x => !x.prof).map(x => `<span class="sk">${esc(x.nome)} <b>${fmtMod(x.bonus)}</b></span>`).join('')}</div></details></details>`; })()}
+  ${(() => { const pw = powerFor(ch); return pw ? `<div class="card power-card"><strong>⚡ ${esc(pw.nome)}</strong><p>${esc(pw.riassunto)}</p></div>` : ''; })()}
+  ${(() => { const t = [...(RACE_TRAITS[ch.data.raceId] || []).map(x => ['race', ...x]), ...(CLASS_FEATURES[ch.data.classId] || []).map(x => ['cls', ...x])]; return t.length ? `<details class="talents"><summary>Talenti di razza e classe</summary><ul>${t.map(([w, n, d]) => `<li class="${w}"><b>${esc(n)}</b> <span class="muted">${esc(d)}</span></li>`).join('')}</ul></details>` : ''; })()}
+  ${(() => { const df = defenseList(ch); return df.length ? `<div class="defs">${df.map(x => `<span class="def ${x.k}" title="da: ${esc(x.da)}">${x.icona} ${esc(x.testo)}<small>${esc(x.da)}</small></span>`).join('')}</div>` : ''; })()}
   <p class="castline">Esperienza: ${ch.data.xp || 0} PE${xpToNext(ch.level) ? ` · prossimo livello a ${xpToNext(ch.level)} PE` : ' · livello massimo'}</p>
   ${(() => { const cs = companionsOf(store, ch); return cs.length ? `<div class="card"><strong>Compagni (${cs.length}/${MAX_COMPANIONS})</strong><ul class="comps">${cs.map(c => `<li><span><b>${esc(c.name)}</b> · ${esc(c.class)} liv. ${c.level}<small>PF ${c.hp}/${c.max_hp}${maxMana(c) ? ` · mana ${manaOf(c)}/${maxMana(c)}` : ''}${c.hp <= 0 ? ' · a terra' : ''}</small></span><button class="btn sm danger" data-act="dismiss-comp" data-id="${c.id}">Congeda</button></li>`).join('')}</ul></div>` : ''; })()}
   ${(ch.data.punti || 0) > 0 ? `<div class="card"><strong>${ch.data.punti} ${ch.data.punti === 1 ? 'punto' : 'punti'} caratteristica da spendere</strong><div class="btnrow"><button class="btn sm primary" data-act="spend-points">Distribuisci</button></div></div>` : ''}
@@ -209,7 +220,7 @@ function tabArmi(ch) {
 function tabZaino(ch) {
   const items = ch.data.oggetti || [];
   return `<div class="stack"><div class="card"><strong>Monete d'oro:</strong> ${ch.data.oro || 0}</div>${questsHtml(store)}
-  <ul class="list">${items.map((o, i) => `<li><div class="card"><strong>${esc(o.nome)}</strong><p class="muted">${esc(o.desc || '')}</p>${o.cura ? `<button class="btn sm primary" data-act="use-item" data-i="${i}">Usa (${esc(o.cura)})</button> ` : ''}${o.magia ? `<button class="btn sm primary" data-act="learn-spell" data-i="${i}">Impara la magia</button> ` : ''}<button class="btn sm danger" data-act="drop-item" data-i="${i}">Getta</button></div></li>`).join('') || '<li class="muted">Lo zaino è vuoto.</li>'}</ul></div>`;
+  <ul class="list">${items.map((o, i) => `<li><div class="card"><strong>${esc(o.nome)}</strong><p class="muted">${esc(o.desc || '')}</p>${(o.cura || o.rimedio || o.resTemp || o.mana) ? `<button class="btn sm primary" data-act="use-item" data-i="${i}">Usa${o.cura ? ` (${esc(o.cura)})` : ''}</button> ` : ''}${o.magia ? `<button class="btn sm primary" data-act="learn-spell" data-i="${i}">Impara la magia</button> ` : ''}<button class="btn sm danger" data-act="drop-item" data-i="${i}">Getta</button></div></li>`).join('') || '<li class="muted">Lo zaino è vuoto.</li>'}</ul></div>`;
 }
 
 function renderNear(ch, r) {
@@ -221,6 +232,7 @@ function renderNear(ch, r) {
     else if (e.kind === 'monster' && d.dead && d.loot && !d.looted) out.push(`<button class="btn sm" data-act="loot" data-id="${e.id}">Saccheggia ${esc(e.name)}</button>`);
     else if (e.kind === 'trap' && d.armed !== false) out.push(`<button class="btn sm" data-act="disarm" data-id="${e.id}">Disarma «${esc(e.name)}» (CD ${d.disarm})</button>`);
     else if (e.kind === 'npc') out.push(`<button class="btn sm primary" data-act="talk" data-id="${e.id}">Parla con ${esc(e.name)}${({ locanda: ' (locanda e ingaggi)', negozio: ' (negozio)', voci: ' (voci e incarichi)', prigioniero: ' (prigioniero)', viandante: ' (viandante)' })[d.role] || ''}</button>`);
+    else if (e.kind === 'door' && d.place === 'albero') out.push(`<button class="btn sm primary" data-act="raccogli" data-id="${e.id}">Raccogli i frutti: ${esc(e.name)}</button>`);
     else if (e.kind === 'door' && d.place === 'oasi') out.push(`<button class="btn sm primary" data-act="enter-oasi" data-id="${e.id}">Entra nell'oasi «${esc(e.name)}» (tira il d20)</button>`);
     else if (e.kind === 'door') {
       if (d.waiting) out.push(`<span class="muted">${esc(e.name)}: la porta è sigillata, si riattiva quando finirete un altro dungeon.</span>`);
@@ -237,33 +249,15 @@ function renderLog() {
 /* ---------- creazione e modifica personaggio ---------- */
 async function createCharacter() {
   const saved = JSON.parse(localStorage.getItem('dnd.lastPlayer') || '""');
-  const extra = `<div class="stack"><div class="btnrow"><button type="button" class="btn sm" id="b-roll">Tira 4d6 e assegna</button><button type="button" class="btn sm" id="b-std">Valori standard</button></div><p class="muted" id="race-note"></p></div>`;
-  const v = await ask({ title: 'Nuovo personaggio', wide: true, ok: 'Crea e gioca', extra, fields: [
-    { name: 'player', label: 'Il tuo nome', value: saved }, { name: 'name', label: 'Nome del personaggio', required: true },
-    { name: 'race', label: 'Razza', type: 'select', options: RACES.map(r => ({ v: r.id, l: `${r.nome} (${r.speed} ft)` })) },
-    { name: 'cls', label: 'Classe', type: 'select', options: CLASSES.map(c => ({ v: c.id, l: c.nome })) },
-    { name: 'level', label: 'Livello', type: 'number', value: 1, min: 1, max: 20 },
-    ...STATS.map(([k, l]) => ({ name: 's_' + k, label: l + ' (base)', type: 'number', value: 10, min: 3, max: 20 })),
-  ], onMount(form) {
-    const note = () => { const r = RACES.find(x => x.id === form.elements.race.value); $('#race-note', form).textContent = `${r.nome}: ${r.nota}. Velocità ${r.speed} ft, cioè ${hexesFor(r.speed)} esagoni per round. Bonus razziali: ${Object.entries(r.bonus).map(([k, n]) => `${STAT_NAME[k]} +${n}`).join(', ')} (si sommano alla creazione).`; };
-    const fill = vals => { const order = PRIO[form.elements.cls.value]; order.forEach((k, i) => (form.elements['s_' + k].value = vals[i])); };
-    form.elements.race.addEventListener('change', note); note();
-    $('#b-std', form).onclick = () => fill([15, 14, 13, 12, 10, 8]);
-    $('#b-roll', form).onclick = () => fill(Array.from({ length: 6 }, () => roll('4d6kh3').total).sort((a, b) => b - a));
-  } });
+  const others = store.characters.filter(c => !c.data?.companion);
+  const level = others.length ? Math.min(10, Math.max(1, Math.round(others.reduce((a, c) => a + c.level, 0) / others.length))) : 1; // chi arriva dopo parte al livello del gruppo
+  const v = await characterDialog({ saved, level });
   if (!v) return;
   localStorage.setItem('dnd.lastPlayer', JSON.stringify(v.player || ''));
-  const race = RACES.find(r => r.id === v.race), cls = CLASSES.find(c => c.id === v.cls), level = v.level || 1;
-  const stats = Object.fromEntries(STATS.map(([k]) => [k, Math.max(1, (v['s_' + k] ?? 10) + (race.bonus[k] || 0))]));
-  const m = Object.fromEntries(Object.entries(stats).map(([k, s]) => [k, mod(s)]));
-  const maxHp = Math.max(1, cls.dv + m.cos + (level - 1) * (Math.floor(cls.dv / 2) + 1 + m.cos));
+  const f = buildSheet({ name: v.name, raceId: v.raceId, classId: v.classId, level: v.level, base: v.base });
   const first = [...store.rooms].sort((a, b) => a.sort - b.sort)[0] || null;
   const spot = first ? freeSpot(first) : { col: 1, row: 1 };
-  const ch = await insert(store, 'characters', {
-    campaign_id: cid, player: (v.player || '').trim(), name: v.name.trim(), race: race.nome, class: cls.nome, level, stats, hp: maxHp, max_hp: maxHp, ac: cls.ac(m), speed: race.speed, move_left: hexesFor(race.speed),
-    room_id: first?.id || null, col: spot.col, row: spot.row,
-    data: { raceId: race.id, classId: cls.id, cast: cls.cast || 'int', oro: 10, oggetti: [{ nome: 'Pozione di cura', desc: 'Recupera 2d4+2 punti ferita.', cura: '2d4+2' }], armi: cls.armi.map(id => ({ ...WEAPONS.find(w => w.id === id) })), magie: cls.magie.map(id => ({ ...SPELLS.find(s => s.id === id) })), note: '' },
-  });
+  const ch = await insert(store, 'characters', { campaign_id: cid, player: v.player, ...f, room_id: first?.id || null, col: spot.col, row: spot.row, data: { ...f.data, oro: 10 + 25 * (v.level - 1) } });
   S.meId = ch.id; localStorage.setItem('dnd.char.' + cid, ch.id); S.mode = { t: 'move' }; render();
 }
 function freeSpot(r) {
@@ -292,13 +286,14 @@ async function spellDialog() {
     { name: 'tipo', label: 'Tipo', type: 'select', options: [{ v: 'attacco', l: 'Tiro per colpire' }, { v: 'salvezza', l: 'Tiro salvezza del bersaglio' }, { v: 'auto', l: 'Colpisce sempre' }, { v: 'cura', l: 'Cura un alleato' }] },
     { name: 'gittata', label: 'Gittata (ft)', type: 'number', value: 60, min: 5 }, { name: 'area', label: 'Raggio d\'area (ft, 0 = bersaglio singolo)', type: 'number', value: 0, min: 0 },
     { name: 'salva', label: 'Salvezza su', type: 'select', value: 'des', options: STATS.map(([k, l]) => ({ v: k, l })) },
+    { name: 'dmg', label: 'Tipo di danno', type: 'select', value: 'arcano', options: Object.entries(TIPI).map(([k, [n]]) => ({ v: k, l: n })) },
     { name: 'meta', label: 'Danni dimezzati se il bersaglio supera la salvezza', type: 'checkbox', value: false },
     { name: 'livello', label: 'Livello (0 = trucchetto che cresce col livello)', type: 'number', value: 1, min: 0, max: 9 },
   ] });
   if (!v) return null;
   if (v.preset !== 'custom') return { ...SPELLS.find(s => s.id === v.preset) };
   if (!v.nome.trim()) throw new Error('Dai un nome alla magia.'); roll(v.dado);
-  return { nome: v.nome.trim(), dado: v.dado.trim(), tipo: v.tipo, gittata: v.gittata ?? 60, area: v.area || 0, salva: v.salva, meta: v.meta, livello: v.livello ?? 1, mod: v.tipo === 'cura' };
+  return { nome: v.nome.trim(), dado: v.dado.trim(), tipo: v.tipo, gittata: v.gittata ?? 60, area: v.area || 0, salva: v.salva, meta: v.meta, dmg: v.dmg || 'arcano', livello: v.livello ?? 1, mod: v.tipo === 'cura' };
 }
 
 async function questDialog(door) {
@@ -309,7 +304,7 @@ async function questDialog(door) {
     const v = await ask({ title: q.title, ok: 'Rispondi', intro: esc(lead), fields: [{ name: 'a', label: 'La tua risposta', required: true }] });
     if (v) await attemptQuest(store, ch, door, q, v.a);
   } else if (q.kind === 'check') {
-    const v = await ask({ title: q.title, ok: 'Tira il d20', intro: esc(lead) + `<br><br>Prova di <b>${STAT_NAME[d.stat] || ''}</b> (CD ${d.dc}). Il tuo bonus è ${fmtMod(mod(ch.stats[d.stat || 'des']))}.` });
+    const v = await ask({ title: q.title, ok: 'Tira il d20', intro: esc(lead) + `<br><br>Prova di <b>${STAT_NAME[d.stat] || ''}</b> (CD ${d.dc}). Il tuo bonus è ${fmtMod(checkBonus(ch, d.stat || 'des'))}.` });
     if (v) await attemptQuest(store, ch, door, q, '');
   } else {
     const v = await ask({ title: q.title, ok: `Prova con «${d.key_item}»`, intro: esc(lead) + `<br><br>Serve: <b>${esc(d.key_item)}</b> (da qualcuno del gruppo in questa stanza).` });
@@ -348,10 +343,12 @@ const acts = {
     const cfg = await dungeonWizard({ level: partyLevel(store), party: Math.max(2, store.characters.length || 3) }); if (!cfg || store.rooms.length) return;
     await startAdventure(store, cfg, { toast });
   }),
+  power: () => busy(() => usePower(store, me())),
   'end-turn': () => busy(() => endTurn(store, me())),
   'skip-turn': () => busy(() => skipTurn(store)),
   'copy-code': () => navigator.clipboard?.writeText(store.campaign.code).then(() => toast('Codice copiato')).catch(() => toast(store.campaign.code)),
   'dismiss-comp': d => busy(async () => { const c = store.characters.find(x => x.id === d.id); if (c && await confirmBox(`Congedare ${c.name}? Se ne va per la sua strada.`, 'Congeda')) await dismissCompanion(store, c); }),
+  raccogli: d => busy(() => raccogli(store, me(), ent(d.id))),
   'enter-oasi': d => busy(() => enterOasi(store, me(), ent(d.id))),
   'learn-spell': d => busy(() => learnSpell(store, me(), +d.i)),
   disarm: d => busy(() => disarmTrap(store, me(), ent(d.id))),

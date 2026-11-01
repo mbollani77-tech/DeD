@@ -5,13 +5,14 @@ import { key, dist } from './hex.js';
 import { freeNear } from './world.js';
 import { propBlocks } from './props.js';
 import { pick } from './dice.js';
+import { defaultSkills } from './skills.js';
 
 export const MAX_COMPANIONS = 2;
 const NAMES = ['Bruno', 'Elsa', 'Garin', 'Mira', 'Tobias', 'Selene', 'Ragnar', 'Ilda', 'Corvo', 'Liora', 'Dante', 'Nera', 'Fenrir', 'Alda', 'Orso', 'Vesper', 'Kael', 'Brina', 'Tullio', 'Zora'];
-const PRIORITY = { guerriero: ['for', 'cos', 'des', 'sag', 'car', 'int'], barbaro: ['for', 'cos', 'des', 'sag', 'car', 'int'], paladino: ['for', 'car', 'cos', 'sag', 'des', 'int'], ranger: ['des', 'sag', 'cos', 'for', 'int', 'car'],
+export const PRIORITY = { guerriero: ['for', 'cos', 'des', 'sag', 'car', 'int'], barbaro: ['for', 'cos', 'des', 'sag', 'car', 'int'], paladino: ['for', 'car', 'cos', 'sag', 'des', 'int'], ranger: ['des', 'sag', 'cos', 'for', 'int', 'car'],
   ladro: ['des', 'int', 'car', 'cos', 'sag', 'for'], monaco: ['des', 'sag', 'cos', 'for', 'int', 'car'], chierico: ['sag', 'cos', 'for', 'car', 'des', 'int'], druido: ['sag', 'cos', 'des', 'int', 'car', 'for'],
   bardo: ['car', 'des', 'cos', 'int', 'sag', 'for'], mago: ['int', 'cos', 'des', 'sag', 'car', 'for'], stregone: ['car', 'cos', 'des', 'sag', 'int', 'for'], warlock: ['car', 'cos', 'des', 'sag', 'int', 'for'] };
-const XP_AT = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000];
+export const XP_AT = [0, 0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000];
 const mods = s => Object.fromEntries(STATS.map(([k]) => [k, mod(s[k])]));
 export const classOf = c => CLASSES.find(k => k.id === (c.data?.classId || c.classId));
 
@@ -28,10 +29,10 @@ export function makeCandidate(level = 1, classId = null) {
   return { name: pick(NAMES), raceId: pick(RACES).id, classId: cls.id, level: Math.max(1, Math.min(10, level)) };
 }
 
-/** Scheda completa (come un personaggio creato da un giocatore) a partire dall'avventuriero. */
-export function buildCompanion(cand) {
-  const race = RACES.find(r => r.id === cand.raceId) || RACES[0]; const cls = CLASSES.find(c => c.id === cand.classId); const level = cand.level;
-  const std = [15, 14, 13, 12, 10, 8]; const pri = PRIORITY[cls.id] || PRIORITY.guerriero; const base = {}; pri.forEach((k, i) => { base[k] = std[i]; });
+/** Scheda completa a partire da razza, classe, livello e (se già tirate) le caratteristiche di base. Serve sia ai giocatori sia ai compagni. */
+export function buildSheet(cand) {
+  const race = RACES.find(r => r.id === cand.raceId) || RACES[0]; const cls = CLASSES.find(c => c.id === cand.classId); const level = cand.level || 1;
+  const std = [15, 14, 13, 12, 10, 8]; const pri = PRIORITY[cls.id] || PRIORITY.guerriero; const base = cand.base || (() => { const b = {}; pri.forEach((k, i) => { b[k] = std[i]; }); return b; })();
   const raw = Object.fromEntries(STATS.map(([k]) => [k, (base[k] ?? 10) + (race.bonus?.[k] || 0)]));
   const stats = spend(raw, cls.id, (level - 1) * 2); const m = mods(stats);
   const maxHp = Math.max(1, cls.dv + m.cos + (level - 1) * Math.max(1, Math.floor(cls.dv / 2) + 1 + m.cos));
@@ -39,14 +40,15 @@ export function buildCompanion(cand) {
   const tmp = { level, stats, data: { classId: cls.id, cast: cls.cast } };
   if (cls.cast && cls.magie.length) {
     const healer = ['chierico', 'druido', 'bardo'].includes(cls.id);
-    const extra = SPELLS.filter(s => s.livello >= 1 && levelForSpell(s.livello) <= level && spellCheck(tmp, s).ok && !magie.some(x => x.id === s.id) && (healer ? s.tipo === 'cura' : s.tipo !== 'cura'));
+    const extra = SPELLS.filter(s => s.livello >= 1 && levelForSpell(s.livello) <= level && spellCheck(tmp, s).ok && !magie.some(x => x.id === s.id) && (healer ? (s.tipo === 'cura' || s.tipo === 'rimedio') : (s.tipo !== 'cura' && s.tipo !== 'rimedio')));
     for (let i = 0, n = Math.floor((level - 1) / 2); i < n && extra.length; i++) magie.push({ ...extra.splice(Math.floor(Math.random() * extra.length), 1)[0] });
   }
   return { name: cand.name, race: race.nome, class: cls.nome, level, stats, hp: maxHp, max_hp: maxHp, ac: cls.ac(m), speed: race.speed, move_left: Math.max(1, Math.round(race.speed / 5)),
-    data: { raceId: race.id, classId: cls.id, cast: cls.cast || 'int', oro: 0, xp: XP_AT[level] ?? 0, punti: 0, oggetti: [{ nome: 'Pozione di cura', desc: 'Recupera 2d4+2 punti ferita.', cura: '2d4+2' }],
+    data: { raceId: race.id, classId: cls.id, cast: cls.cast || 'int', abilita: defaultSkills(race.id, cls.id), oro: 0, xp: XP_AT[level] ?? 0, punti: 0, oggetti: [{ nome: 'Pozione di cura', desc: 'Recupera 2d4+2 punti ferita.', cura: '2d4+2' }],
       armi: cls.armi.map(id => ({ ...WEAPONS.find(w => w.id === id) })), magie } };
 }
 
+export const buildCompanion = buildSheet;
 export const companionsOf = (store, owner) => store.characters.filter(c => c.data?.companion?.owner === owner.id);
 export const hirePrice = cand => 40 * cand.level;
 
