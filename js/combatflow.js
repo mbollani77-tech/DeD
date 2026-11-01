@@ -2,7 +2,7 @@
 // (Nessuna dipendenza da combat.js: è combat.js a usare queste funzioni.)
 import { insert, update, say, setCampaignState } from './db.js';
 import { rollD20 } from './dice.js';
-import { mod, maxMana } from './rules.js';
+import { mod, maxMana, hexesFor } from './rules.js';
 import { dist, key } from './hex.js';
 import { resetEco } from './economia.js';
 import { freeNear } from './world.js';
@@ -70,6 +70,7 @@ export async function endCombatIfDone(store) {
   if (init.some(i => i.k === 'e' && store.entities.some(e => e.id === i.id && !e.data.dead))) return;
   await setCampaignState(store, { init: [], turn: 0, round: 1 });
   await resetEco(store);
+  for (const c of store.characters) { const m = hexesFor(c.speed); if (c.move_left !== m) await update(store, 'characters', c.id, { move_left: m }); } // il movimento torna pieno
   say(store, 'Master', 'event', 'Lo scontro è finito: azioni e movimento tornano liberi.');
 }
 

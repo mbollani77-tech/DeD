@@ -336,12 +336,19 @@ export async function doAction(store, o, what, ally = null) {
   throw new Error('Azione sconosciuta.');
 }
 /** Sposta il PG, attraversa porte sbloccate, innesca trappole, cerca trappole nascoste. */
+/** Quanto ci si può muovere adesso: in combattimento il movimento residuo del round; fuori dagli scontri è libero (in viaggio due volte la velocità a ogni tappa). */
+export const moveBudget = (store, ch) => {
+  if (inCombat(store)) return ch.move_left;
+  const room = store.rooms.find(r => r.id === ch.room_id); return room && isWorld(room) ? worldMove(ch) : hexesFor(ch.speed);
+};
+
 export async function moveCharacter(store, ch, room, hex, cost) {
   turnGuard(store, ch);
-  let left = Math.max(0, ch.move_left - cost);
-  // incidente di movimento: 1 naturale su un d20 e il PG perde il resto del movimento
+  const free = !inCombat(store); // fuori dagli scontri il movimento non si consuma
+  let left = free ? hexesFor(ch.speed) : Math.max(0, ch.move_left - cost);
+  // incidente di movimento: 1 naturale su un d20 e il PG perde il resto del movimento (solo in combattimento)
   const mishap = MOVE_MISHAPS && rollD20(0).fumble;
-  if (mishap) left = 0;
+  if (mishap && !free) left = 0;
   await opportunityOnLeave(store, room, ch, { col: ch.col, row: ch.row }, hex);
   if (ch.hp <= 0) return; // a terra: non si muove
   const door = store.entities.find(e => e.room_id === room.id && e.kind === 'door' && e.col === hex.col && e.row === hex.row);

@@ -495,7 +495,7 @@ const acts = {
   'loot-toggle': async () => { const c = store.campaign.state?.config || {}; await setCampaignState(store, { config: { ...c, autoLoot: c.autoLoot === false } }); toast(c.autoLoot === false ? 'Bottino automatico: i mostri sconfitti pagano subito' : 'Bottino a mano: usa «Saccheggia»'); },
   'auto-toggle': async () => { const c = store.campaign.state?.config || {}; await setCampaignState(store, { config: { ...c, auto: !c.auto } }); toast(!c.auto ? 'Mostri automatici: attivi' : 'Mostri automatici: spenti, li muovi tu'); if (!c.auto) runAutoMonsters(); },
   'round-reset': async () => { await resetMoves(); toast('Movimento ripristinato per tutti'); },
-  'init-clear': async () => { await setCampaignState(store, { init: [], turn: 0, round: 1 }); await resetEco(store); },
+  'init-clear': async () => { await setCampaignState(store, { init: [], turn: 0, round: 1 }); await resetEco(store); for (const c of store.characters) await update(store, 'characters', c.id, { move_left: hexesFor(c.speed) }); },
 };
 
 document.addEventListener('click', async e => {

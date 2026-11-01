@@ -4,7 +4,7 @@ import { createView } from './view.js';
 import { openDungeonMap } from './dungeonmap.js';
 import { mountDiceTray, roll, rollDie } from './dice.js';
 import { STATS, STAT_NAME, RACES, CLASSES, WEAPONS, SPELLS, mod, prof, fmtMod, hexesFor, weaponCheck, spellCheck, maxMana, manaOf, spellCost } from './rules.js';
-import { weaponAttack, castSpell, opportunityAttack, doAction, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters, markVisited } from './combat.js';
+import { weaponAttack, castSpell, opportunityAttack, doAction, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters, markVisited, moveBudget } from './combat.js';
 import { getEco, weaponSlot, spellSlot, isRogue } from './economia.js';
 import { mountDicebar } from './dicebar.js';
 import { setMood, onLog, moodFor, play, soundDialog, soundOn } from './sound.js';
@@ -79,7 +79,7 @@ function computeHL(ch, r) {
   if (!ch || !r || ch.hp <= 0) return;
   const from = { col: ch.col, row: ch.row };
   if (S.mode.t === 'move') {
-    S.reach = reachable(r, from, ch.move_left, blockedSet(store, r, { exceptChar: ch.id }));
+    S.reach = reachable(r, from, moveBudget(store, ch), blockedSet(store, r, { exceptChar: ch.id }));
     S.reach.forEach((_, k) => S.hl.set(k, 'move'));
     return;
   }
@@ -163,7 +163,7 @@ function renderActionbar(ch) {
   const st = store.campaign.state || {}; const fight = (st.init || []).length > 0; const curT = fight ? st.init[st.turn || 0] : null;
   const turnGrp = fight && curT ? (curT.id === ch.id ? '<div class="grp"><h4>Turno</h4><button class="btn primary big" data-act="end-turn">Fine turno ▶</button></div>' : `<div class="grp"><h4>Turno</h4><p class="muted small">Tocca a <b>${esc(curT.name)}</b></p>${st.coop && curT.k === 'c' ? '<button class="btn sm" data-act="skip-turn">Salta il suo turno</button>' : ''}</div>`) : '';
   el.innerHTML = `${turnGrp}<div class="grp"><h4>Round</h4><div class="pips">${pip('Azione', e.az, e.az)}${pip('Bonus', e.bo, e.bo)}${pip('Reaz.', e.re, e.re)}</div>${manaBar}${stati ? `<div class="states">${stati}</div>` : ''}</div>`
-    + `<div class="grp"><h4>Movimento</h4>${mode('', m.t === 'move', 'data-t="move"', 'Muovi', `${ch.move_left} / ${hexesFor(ch.speed)} esagoni`)}</div>`
+    + `<div class="grp"><h4>Movimento</h4>${mode('', m.t === 'move', 'data-t="move"', 'Muovi', `${moveBudget(store, ch)} / ${hexesFor(ch.speed)} esagoni`)}</div>`
     + (armi ? `<div class="grp"><h4>Armi</h4>${armi}</div>` : '')
     + (magie ? `<div class="grp"><h4>Magie</h4>${magie}</div>` : '')
     + `<div class="grp"><h4>Azioni</h4><div class="two">${act('scatto', 'Scatta', e.az, 'Azione: raddoppia il movimento del round')}${act('schiva', 'Schiva', e.az, 'Azione: svantaggio a chi ti attacca, vantaggio ai tiri salvezza di Destrezza')}${act('disimp', 'Disimpegnati', e.az, 'Azione: ti muovi senza subire attacchi di opportunità')}${act('aiuto', 'Aiuta', e.az, 'Azione: il prossimo attacco di un compagno ha vantaggio')}</div></div>`
@@ -176,7 +176,7 @@ function renderStatus(ch, r) {
   const a = currentAction(ch); let t;
   if (ch.hp <= 0) t = 'Sei a terra. Il Master o un alleato può aiutarti.';
   else if (S.mode.t === 'reaz') t = 'Reazione: clicca un mostro adiacente per l\'attacco di opportunità (arma da mischia migliore).';
-  else if (S.mode.t === 'move') t = `Muovi: ${ch.move_left} esagoni disponibili (${ch.move_left * 5} ft). Il terreno difficile e l'acqua costano doppio.`;
+  else if (S.mode.t === 'move') t = `Muovi: ${moveBudget(store, ch)} esagoni disponibili (${moveBudget(store, ch) * 5} ft). Il terreno difficile e l'acqua costano doppio.`;
   else if (a?.item.tipo === 'cura') t = `${a.item.nome}: gittata ${hexesFor(a.item.gittata)} esagoni. Clicca un alleato evidenziato.`;
   else if (a?.item.area) t = `${a.item.nome}: gittata ${hexesFor(a.item.gittata)} esagoni, raggio ${hexesFor(a.item.area)}. Clicca il centro dell'esplosione.`;
   else if (a) t = `${a.item.nome}: gittata ${hexesFor(a.item.gittata || 5)} esagoni. Clicca un mostro evidenziato.`;
