@@ -65,3 +65,7 @@ export const mishapFlavor = a => fill(pick(POOL.mishap), { a });
 
 /** Dall'esito di rollD20 + hit/crit all'etichetta usata sopra. */
 export const outcomeOf = (r, hit) => (r.crit ? 'crit' : r.fumble ? 'fumble' : hit ? 'hit' : 'miss');
+
+/** Il testo contiene una delle frasi di fallimento critico? (serve ai suoni) */
+const FUMBLE_RX = POOL.fumble.map(p => new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{a\\\}/g, '.+?').replace(/\\\{d\\\}/g, '.+?')));
+export const isFumbleText = text => FUMBLE_RX.some(r => r.test(text));

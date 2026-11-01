@@ -1,4 +1,4 @@
-import { configured, createCampaign, verifyMaster, findCampaign } from './db.js';
+import { configured, createCampaign, verifyMaster, findCampaign, sb } from './db.js';
 import { $, toast } from './ui.js';
 import { center, dist, SQ3 } from './hex.js';
 
@@ -34,6 +34,15 @@ go($('#f-new'), async () => {
   const r = await createCampaign(name);
   localStorage.setItem('dnd.master', JSON.stringify({ id: r.id, code: r.code, key: r.master_key, name }));
   $('#c-code').textContent = r.code; $('#c-key').textContent = r.master_key; $('#created').hidden = false;
+});
+
+go($('#f-coop'), async () => {
+  const name = $('#k-name').value.trim();
+  const r = await createCampaign(name);
+  const { error } = await sb.from('campaigns').update({ state: { coop: true } }).eq('id', r.id); if (error) throw new Error(error.message);
+  localStorage.setItem('dnd.master', JSON.stringify({ id: r.id, code: r.code, key: r.master_key, name })); // il pannello Master resta disponibile per chi vuole il controllo totale
+  localStorage.setItem('dnd.join', JSON.stringify({ id: r.id, code: r.code }));
+  $('#k-code').textContent = r.code; $('#k-created').hidden = false;
 });
 
 go($('#f-master'), async () => {

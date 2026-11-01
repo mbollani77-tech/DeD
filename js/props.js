@@ -4,6 +4,8 @@ export const THEMES = {
   cripta: { nome: 'Cripta di pietra', wallStyle: 'stone', bg: '#161c22', hatch: '#39444d', floor: ['#c8cec8', '#c0c7c1', '#cdd2cb'], edge: '#00000022', stain: '#5d6b5a', wall: '#3d4953', wallTop: '#5f6c76', diff: '#aa9f7c', water: '#6c9db4', sky: 0x10161b },
   caverna: { nome: 'Caverna', wallStyle: 'rock', bg: '#231b13', hatch: '#4a3a2a', floor: ['#b7a487', '#ae9b7e', '#bfac8f'], edge: '#3a2a1a1f', stain: '#6a5334', wall: '#4d3a28', wallTop: '#6e5439', diff: '#97875f', water: '#5b8ba0', sky: 0x1b140d },
   foresta: { nome: 'Radura nel bosco', wallStyle: 'bush', bg: '#13211a', hatch: '#2a4630', floor: ['#8dab76', '#84a26d', '#96b47f'], edge: '#1d3a1c22', stain: '#4a6a3a', wall: '#2c4a33', wallTop: '#3f6b49', diff: '#7a8a54', water: '#5a9ab0', sky: 0x0f1d16 },
+  mondo: { nome: 'Mappa del mondo', wallStyle: 'rock', bg: '#1b2a33', hatch: '#2f4652', floor: ['#a9c27a', '#a1ba72', '#b1c883'], edge: '#00000012', stain: '#6a8a4a', wall: '#8d9095', wallTop: '#a3a6ab', diff: '#5d8a50', water: '#6aa5d4', sky: 0x16242c },
+  paese: { nome: 'Piazza del paese', wallStyle: 'stone', bg: '#20190f', hatch: '#4a3b25', floor: ['#d8c9a4', '#d0c19b', '#dfd1ae'], edge: '#5a481f22', stain: '#8d7a4a', wall: '#7a5a3a', wallTop: '#a47a4e', diff: '#bcab80', water: '#78a6b8', sky: 0x1d170e },
   tempio: { nome: 'Tempio antico', wallStyle: 'stone', bg: '#241d13', hatch: '#58482e', floor: ['#d6cbae', '#cfc3a4', '#dcd1b6'], edge: '#5a481f22', stain: '#8d7a4a', wall: '#6a573a', wallTop: '#8a7350', diff: '#bcab80', water: '#78a6b8', sky: 0x1d170e },
   ghiaccio: { nome: 'Grotta di ghiaccio', wallStyle: 'stone', bg: '#101b24', hatch: '#2d4859', floor: ['#d4e4ec', '#cde0ea', '#dcebf2'], edge: '#2a5a7a22', stain: '#8fb4c8', wall: '#4a6679', wallTop: '#7392a6', diff: '#b6cbd7', water: '#4a8cb4', sky: 0x0c161e },
 };
@@ -33,6 +35,8 @@ export const PROPS = {
 };
 export const PROP_LIST = Object.entries(PROPS).map(([v, p]) => ({ v, l: p.nome }));
 export const THEME_PROPS = {
+  paese: ['pozzo', 'botte', 'casse', 'tavolo', 'albero', 'cespuglio', 'fuoco'],
+  mondo: [],
   cripta: ['sarcofago', 'statua', 'colonna', 'ossa', 'ragnatela', 'botte', 'macerie', 'altare', 'casse'],
   caverna: ['stalagmite', 'stalagmite', 'macerie', 'ossa', 'fungo', 'fuoco', 'ragnatela'],
   foresta: ['albero', 'albero', 'cespuglio', 'cespuglio', 'macerie', 'fuoco', 'fungo', 'ossa'],

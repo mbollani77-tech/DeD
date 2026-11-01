@@ -3,10 +3,19 @@ import { $, esc, toast, ask, confirmBox } from './ui.js';
 import { createView } from './view.js';
 import { openDungeonMap } from './dungeonmap.js';
 import { mountDiceTray, roll, rollDie } from './dice.js';
-import { STATS, STAT_NAME, RACES, CLASSES, WEAPONS, SPELLS, mod, prof, fmtMod, hexesFor } from './rules.js';
+import { STATS, STAT_NAME, RACES, CLASSES, WEAPONS, SPELLS, mod, prof, fmtMod, hexesFor, weaponCheck, spellCheck, maxMana, manaOf, spellCost } from './rules.js';
 import { weaponAttack, castSpell, opportunityAttack, doAction, moveCharacter, passDoor, lootEntity, useItem, disarmTrap, attemptQuest, blockedSet, liveMonsters, markVisited } from './combat.js';
 import { getEco, weaponSlot, spellSlot, isRogue } from './economia.js';
 import { mountDicebar } from './dicebar.js';
+import { setMood, onLog, moodFor, play, soundDialog, soundOn } from './sound.js';
+import { talkTo, questsHtml, learnSpell } from './town.js';
+import { enterOasi } from './oasi.js';
+import { spendPoints } from './levelup.js';
+import { runAutoMonsters, endTurn, skipTurn, partyLevel } from './engine.js';
+import { startAdventure } from './adventure.js';
+import { companionsOf, dismissCompanion, MAX_COMPANIONS } from './companions.js';
+import { dungeonWizard } from './wizard.js';
+import { xpToNext } from './combat.js';
 import { key, dist, neighbors, inBounds, reachable, hexesWithin, los } from './hex.js';
 
 const fatal = msg => { document.body.innerHTML = `<div class="fatal"><h2>Non riesco ad aprire la campagna</h2><p>${esc(msg)}</p><a class="btn primary" href="index.html">Torna all'inizio</a></div>`; };
@@ -33,7 +42,7 @@ const board = createView({ svg: $('#board'), host3d: $('#board3d'), handlers: {
       const cost = S.reach.get(k); if (cost == null) return toast('Troppo lontano, oppure la strada è bloccata.');
       const trap = store.entities.find(e => e.room_id === r.id && e.kind === 'trap' && !e.hidden && e.data.armed !== false && e.col === col && e.row === row);
       if (trap && !(await confirmBox(`Lì c'è una trappola nota: «${trap.name}». Vuoi davvero metterci piede?`, 'Vai lo stesso'))) return;
-      return busy(() => moveCharacter(store, ch, r, { col, row }, cost));
+      play('step'); return busy(() => moveCharacter(store, ch, r, { col, row }, cost));
     }
     if (S.mode.t === 'reaz') {
       const t = liveMonsters(store, r.id).find(e => !e.hidden && e.col === col && e.row === row);
@@ -92,6 +101,7 @@ function visibleSet(r) {
 
 /* ---------- rendering ---------- */
 function render() {
+  setTimeout(() => runAutoMonsters(store).catch(() => {}), 0); // se tocca a un mostro, gioca da solo (con il gioco cooperativo o i mostri automatici)
   const ch = me();
   if (S.meId && !ch) { S.meId = null; localStorage.removeItem('dnd.char.' + cid); }
   $('#chooser').hidden = !!ch;
@@ -102,17 +112,19 @@ function render() {
   renderTop(ch); renderToolbar(r); renderInit(ch); renderBoard(ch, r); renderActionbar(ch); renderStatus(ch, r);
   if (!(document.activeElement?.tagName === 'SELECT' && $('#panel').contains(document.activeElement))) renderPanel(ch);
   renderNear(ch, r); renderLog();
+  setMood(moodFor(store, r)); onLog(store.log); $('[data-act="sound"]')?.classList.toggle('on', soundOn());
 }
 
 function renderChooser() {
-  const list = store.characters;
+  const list = store.characters.filter(c => !c.data?.companion);
   $('#chooser').innerHTML = `<div class="panelbox"><h2>Chi giochi stasera?</h2><p class="muted">Campagna «${esc(store.campaign.name)}»</p>
     <ul class="list">${list.map(c => `<li><button class="row" data-act="pick-char" data-id="${c.id}"><strong>${esc(c.name)}</strong><span class="muted">${esc(c.race)} ${esc(c.class)} di livello ${c.level}${c.player ? ', ' + esc(c.player) : ''}</span><span class="chip">${c.hp}/${c.max_hp} PF</span></button></li>`).join('') || '<li class="muted">Nessun personaggio ancora.</li>'}</ul>
     <p></p><button class="btn primary" data-act="new-char">Crea un nuovo personaggio</button> <a class="btn ghost" href="index.html">Esci</a></div>`;
 }
 
 function renderTop(ch) {
-  $('#top').innerHTML = `<h1>${esc(store.campaign.name)}</h1><span>${esc(ch.name)}</span><span class="sp"></span><span class="live ${store.status === 'SUBSCRIBED' ? 'ok' : ''}" title="${store.status === 'SUBSCRIBED' ? 'Collegato in tempo reale' : 'Connessione in corso'}"></span><button class="btn sm" data-act="switch-char">Cambia personaggio</button>`;
+  const coop = !!store.campaign.state?.coop;
+  $('#top').innerHTML = `<h1>${esc(store.campaign.name)}</h1><span>${esc(ch.name)}</span><span class="sp"></span>${coop ? `<button class="btn sm" data-act="copy-code" title="Copia il codice da dare agli amici">Codice ${esc(store.campaign.code)}</button>` : ''}<span class="live ${store.status === 'SUBSCRIBED' ? 'ok' : ''}" title="${store.status === 'SUBSCRIBED' ? 'Collegato in tempo reale' : 'Connessione in corso'}"></span><button class="btn sm" data-act="switch-char">Cambia personaggio</button>`;
 }
 function renderToolbar(r) { const t = $('#toolbar'); t.innerHTML = r ? `<strong style="color:#e8efec">${esc(r.name)}</strong>` : ''; t.hidden = !r; }
 function renderInit(ch) {
@@ -127,7 +139,7 @@ function renderBoard(ch, r) {
   const empty = $('#empty'); empty.hidden = !!r; board.show(!!r);
   const vb = $('[data-act="view"]'); if (vb) vb.textContent = board.mode === '2d' ? '3D' : '2D';
   $('[data-act="mini"]')?.classList.toggle('on', board.miniOn);
-  if (!r) { empty.innerHTML = '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
+  if (!r) { empty.innerHTML = store.campaign.state?.coop ? (store.rooms.length ? '<div><h2>Un attimo…</h2><p>Il tuo personaggio sta per entrare nell\'avventura.</p></div>' : '<div><h2>Inizia l\'avventura</h2><p>Scegli come sarà: il gioco crea mappa, mostri e tesori. Prima crea il tuo personaggio (e gli amici possono unirsi col codice in alto).</p><button class="btn primary" data-act="adv-start">Crea l\'avventura</button></div>') : '<div><h2>Aspetta il Master</h2><p>Il tuo personaggio non è ancora in nessuna stanza.</p></div>'; return; }
   board.render({ room: r, role: 'player', meId: ch.id, entities: store.entities.filter(e => e.room_id === r.id && !e.hidden), characters: store.characters.filter(c => c.room_id === r.id), hl: S.hl, turnId: (store.campaign.state?.init || [])[store.campaign.state?.turn || 0]?.id, visible: visibleSet(r) });
 }
 function renderActionbar(ch) {
@@ -137,10 +149,14 @@ function renderActionbar(ch) {
   const mode = (cls, on, attrs, label, sub = '', off = false) => `<button class="btn ${cls} ${on ? 'on' : ''}" data-act="mode" ${attrs} ${off ? 'disabled' : ''}>${label}${sub ? `<small>${sub}</small>` : ''}</button>`;
   const act = (w, label, off, title) => `<button class="btn" data-act="act" data-w="${w}" ${off ? 'disabled' : ''} title="${esc(title)}">${label}</button>`;
   const pip = (name, used, what) => `<div class="pip ${used ? 'used' : ''}" title="${esc(what || 'libera')}"><b>${name}</b>${used ? 'usata' : 'libera'}</div>`;
-  const armi = (ch.data.armi || []).map((w, i) => { const sl = weaponSlot(ch, w, i); return mode('weapon', m.t === 'weapon' && m.i === i, `data-t="weapon" data-i="${i}"`, esc(w.nome), `${esc(w.dado)}${slotTag(sl) ? ' · ' + slotTag(sl) : ''}`, !sl); }).join('');
-  const magie = (ch.data.magie || []).map((s, i) => { const sl = spellSlot(ch, s); return mode('spell', m.t === 'spell' && m.i === i, `data-t="spell" data-i="${i}"`, esc(s.nome), `${s.livello ? 'liv. ' + s.livello : 'trucchetto'}${sl === 'bonus' ? ' · azione bonus' : ''}`, !sl); }).join('');
+  const armi = (ch.data.armi || []).map((w, i) => { const sl = weaponSlot(ch, w, i); const wc = weaponCheck(ch, w); return mode('weapon', m.t === 'weapon' && m.i === i, `data-t="weapon" data-i="${i}"`, esc(w.nome), wc.ok ? `${esc(w.dado)}${slotTag(sl) ? ' · ' + slotTag(sl) : ''}${wc.prof ? '' : ' · non competente'}` : esc(wc.why), !sl || !wc.ok); }).join('');
+  const magie = (ch.data.magie || []).map((s, i) => { const sl = spellSlot(ch, s); const sc = spellCheck(ch, s); const cost = spellCost(s); const lowMana = manaOf(ch) < cost; return mode('spell', m.t === 'spell' && m.i === i, `data-t="spell" data-i="${i}"`, esc(s.nome), sc.ok ? (lowMana ? `mana insufficiente (${cost})` : `${s.livello ? 'liv. ' + s.livello : 'trucchetto'} · ${cost} mana${sl === 'bonus' ? ' · bonus' : ''}`) : esc(sc.why), !sl || !sc.ok || lowMana); }).join('');
   const stati = [e.atk > 0 ? `<span class="chip gold">+${e.atk} attacchi</span>` : '', e.schiva ? '<span class="chip">Schivata</span>' : '', e.disimp ? '<span class="chip">Disimpegno</span>' : '', e.aiuto ? '<span class="chip gold">Aiutato</span>' : ''].join('');
-  el.innerHTML = `<div class="grp"><h4>Round</h4><div class="pips">${pip('Azione', e.az, e.az)}${pip('Bonus', e.bo, e.bo)}${pip('Reaz.', e.re, e.re)}</div>${stati ? `<div class="states">${stati}</div>` : ''}</div>`
+  const mx = maxMana(ch); const mn = manaOf(ch);
+  const manaBar = mx ? `<div class="manabar" title="Mana: ${mn} su ${mx}"><span>Mana</span><div><i style="width:${Math.round(mn / mx * 100)}%"></i></div><b>${mn}/${mx}</b></div>` : '';
+  const st = store.campaign.state || {}; const fight = (st.init || []).length > 0; const curT = fight ? st.init[st.turn || 0] : null;
+  const turnGrp = fight && curT ? (curT.id === ch.id ? '<div class="grp"><h4>Turno</h4><button class="btn primary big" data-act="end-turn">Fine turno ▶</button></div>' : `<div class="grp"><h4>Turno</h4><p class="muted small">Tocca a <b>${esc(curT.name)}</b></p>${st.coop && curT.k === 'c' ? '<button class="btn sm" data-act="skip-turn">Salta il suo turno</button>' : ''}</div>`) : '';
+  el.innerHTML = `${turnGrp}<div class="grp"><h4>Round</h4><div class="pips">${pip('Azione', e.az, e.az)}${pip('Bonus', e.bo, e.bo)}${pip('Reaz.', e.re, e.re)}</div>${manaBar}${stati ? `<div class="states">${stati}</div>` : ''}</div>`
     + `<div class="grp"><h4>Movimento</h4>${mode('', m.t === 'move', 'data-t="move"', 'Muovi', `${ch.move_left} / ${hexesFor(ch.speed)} esagoni`)}</div>`
     + (armi ? `<div class="grp"><h4>Armi</h4>${armi}</div>` : '')
     + (magie ? `<div class="grp"><h4>Magie</h4>${magie}</div>` : '')
@@ -171,8 +187,12 @@ function tabScheda(ch) {
   const ab = ([k, l]) => { const mm = mod(ch.stats[k]); return `<div class="ab" title="${l} ${ch.stats[k]}"><span>${l.slice(0, 3).toUpperCase()}</span><b class="${mm < 0 ? 'neg' : ''}">${fmtMod(mm)}</b><small>${ch.stats[k]}</small></div>`; };
   return `<div class="sheet"><div class="sheet-head"><h2>${esc(ch.name)}</h2><p class="muted">${esc(ch.race)} ${esc(ch.class)} · livello ${ch.level}${ch.player ? ` · ${esc(ch.player)}` : ''}</p></div>
   <div class="hp"><span>PF</span>${meter(ch.hp, ch.max_hp)}<em>${ch.hp} / ${ch.max_hp}</em></div>
+  ${maxMana(ch) ? `<div class="hp mana"><span>Mana</span><div class="manameter"><i style="width:${Math.round(manaOf(ch) / maxMana(ch) * 100)}%"></i></div><em>${manaOf(ch)} / ${maxMana(ch)}</em></div>` : ''}
   <div class="vitals"><div class="vital"><b>${ch.ac}</b><span>CA</span></div><div class="vital"><b>${ch.speed}<small>ft</small></b><span>${hexesFor(ch.speed)} esagoni</span></div><div class="vital"><b>${fmtMod(pb)}</b><span>Competenza</span></div><div class="vital"><b>${fmtMod(mod(ch.stats.des))}</b><span>Iniziativa</span></div></div>
   <div class="abilities">${STATS.map(ab).join('')}</div>
+  <p class="castline">Esperienza: ${ch.data.xp || 0} PE${xpToNext(ch.level) ? ` · prossimo livello a ${xpToNext(ch.level)} PE` : ' · livello massimo'}</p>
+  ${(() => { const cs = companionsOf(store, ch); return cs.length ? `<div class="card"><strong>Compagni (${cs.length}/${MAX_COMPANIONS})</strong><ul class="comps">${cs.map(c => `<li><span><b>${esc(c.name)}</b> · ${esc(c.class)} liv. ${c.level}<small>PF ${c.hp}/${c.max_hp}${maxMana(c) ? ` · mana ${manaOf(c)}/${maxMana(c)}` : ''}${c.hp <= 0 ? ' · a terra' : ''}</small></span><button class="btn sm danger" data-act="dismiss-comp" data-id="${c.id}">Congeda</button></li>`).join('')}</ul></div>` : ''; })()}
+  ${(ch.data.punti || 0) > 0 ? `<div class="card"><strong>${ch.data.punti} ${ch.data.punti === 1 ? 'punto' : 'punti'} caratteristica da spendere</strong><div class="btnrow"><button class="btn sm primary" data-act="spend-points">Distribuisci</button></div></div>` : ''}
   ${cast ? `<p class="castline">Magia: ${STAT_NAME[cast]} · CD ${8 + pb + mod(ch.stats[cast])}</p>` : ''}
   ${ch.data.note ? `<div class="card"><strong>Note</strong><p>${esc(ch.data.note)}</p></div>` : ''}
   </div>`;
@@ -180,15 +200,16 @@ function tabScheda(ch) {
 function tabArmi(ch) {
   const pb = prof(ch.level); const cm = mod(ch.stats[ch.data.cast || 'int']);
   const wstat = w => (w.stat === 'fin' ? (ch.stats.des >= ch.stats.for ? 'des' : 'for') : w.stat);
-  return `<div class="stack"><h3>Armi</h3><ul class="list">${(ch.data.armi || []).map((w, i) => `<li><div class="card"><strong>${esc(w.nome)}</strong><p class="muted">${fmtMod(mod(ch.stats[wstat(w)]) + pb)} per colpire, danni ${esc(w.dado)}${fmtMod(mod(ch.stats[wstat(w)]))}, gittata ${w.gittata} ft (${hexesFor(w.gittata)} esagoni)</p><button class="btn sm danger" data-act="del-weapon" data-i="${i}">Rimuovi</button></div></li>`).join('') || '<li class="muted">Nessuna arma.</li>'}</ul>
+  const wcOf = w => weaponCheck(ch, w), scOf = s => spellCheck(ch, s);
+  return `<div class="stack"><h3>Armi</h3><ul class="list">${(ch.data.armi || []).map((w, i) => `<li><div class="card"><strong>${esc(w.nome)}</strong> ${wcOf(w).ok ? '' : `<span class="chip red">${esc(wcOf(w).why)}</span>`}${wcOf(w).prof ? '' : '<span class="chip">non competente</span>'}<p class="muted">${fmtMod(mod(ch.stats[wstat(w)]) + (wcOf(w).prof ? pb : 0))} per colpire, danni ${esc(w.dado)}${fmtMod(mod(ch.stats[wstat(w)]))}, gittata ${w.gittata} ft (${hexesFor(w.gittata)} esagoni)</p><button class="btn sm danger" data-act="del-weapon" data-i="${i}">Rimuovi</button></div></li>`).join('') || '<li class="muted">Nessuna arma.</li>'}</ul>
   <button class="btn" data-act="add-weapon">Aggiungi arma</button>
-  <h3>Magie</h3><ul class="list">${(ch.data.magie || []).map((s, i) => `<li><div class="card"><strong>${esc(s.nome)}</strong> <span class="chip">${s.livello ? 'livello ' + s.livello : 'trucchetto'}</span><p class="muted">${{ attacco: 'Tiro per colpire ' + fmtMod(cm + pb), salvezza: 'Salvezza ' + (STAT_NAME[s.salva || 'des'] || '') + ' CD ' + (8 + pb + cm), auto: 'Colpisce sempre', cura: 'Cura' }[s.tipo]}, ${esc(s.dado)}, gittata ${s.gittata} ft (${hexesFor(s.gittata)} esagoni)${s.area ? `, raggio ${s.area} ft` : ''}</p><button class="btn sm danger" data-act="del-spell" data-i="${i}">Rimuovi</button></div></li>`).join('') || '<li class="muted">Nessuna magia.</li>'}</ul>
+  <h3>Magie</h3><ul class="list">${(ch.data.magie || []).map((s, i) => `<li><div class="card"><strong>${esc(s.nome)}</strong> <span class="chip">${s.livello ? 'livello ' + s.livello : 'trucchetto'}</span> <span class="chip gold">${spellCost(s)} mana</span>${scOf(s).ok ? '' : ` <span class="chip red">${esc(scOf(s).why)}</span>`}<p class="muted">${{ attacco: 'Tiro per colpire ' + fmtMod(cm + pb), salvezza: 'Salvezza ' + (STAT_NAME[s.salva || 'des'] || '') + ' CD ' + (8 + pb + cm), auto: 'Colpisce sempre', cura: 'Cura' }[s.tipo]}, ${esc(s.dado)}, gittata ${s.gittata} ft (${hexesFor(s.gittata)} esagoni)${s.area ? `, raggio ${s.area} ft` : ''}</p><button class="btn sm danger" data-act="del-spell" data-i="${i}">Rimuovi</button></div></li>`).join('') || '<li class="muted">Nessuna magia.</li>'}</ul>
   <button class="btn" data-act="add-spell">Aggiungi magia</button></div>`;
 }
 function tabZaino(ch) {
   const items = ch.data.oggetti || [];
-  return `<div class="stack"><div class="card"><strong>Monete d'oro:</strong> ${ch.data.oro || 0}</div>
-  <ul class="list">${items.map((o, i) => `<li><div class="card"><strong>${esc(o.nome)}</strong><p class="muted">${esc(o.desc || '')}</p>${o.cura ? `<button class="btn sm primary" data-act="use-item" data-i="${i}">Usa (${esc(o.cura)})</button> ` : ''}<button class="btn sm danger" data-act="drop-item" data-i="${i}">Getta</button></div></li>`).join('') || '<li class="muted">Lo zaino è vuoto.</li>'}</ul></div>`;
+  return `<div class="stack"><div class="card"><strong>Monete d'oro:</strong> ${ch.data.oro || 0}</div>${questsHtml(store)}
+  <ul class="list">${items.map((o, i) => `<li><div class="card"><strong>${esc(o.nome)}</strong><p class="muted">${esc(o.desc || '')}</p>${o.cura ? `<button class="btn sm primary" data-act="use-item" data-i="${i}">Usa (${esc(o.cura)})</button> ` : ''}${o.magia ? `<button class="btn sm primary" data-act="learn-spell" data-i="${i}">Impara la magia</button> ` : ''}<button class="btn sm danger" data-act="drop-item" data-i="${i}">Getta</button></div></li>`).join('') || '<li class="muted">Lo zaino è vuoto.</li>'}</ul></div>`;
 }
 
 function renderNear(ch, r) {
@@ -196,11 +217,14 @@ function renderNear(ch, r) {
   const out = [];
   for (const e of store.entities.filter(x => x.room_id === r.id && !x.hidden && dist(ch, x) <= 1)) {
     const d = e.data;
-    if (e.kind === 'treasure' && !d.looted) out.push(`<button class="btn sm" data-act="loot" data-id="${e.id}">Apri «${esc(e.name)}»</button>`);
+    if (e.kind === 'treasure' && !d.looted) out.push(d.locked ? `<button class="btn sm" data-act="door" data-id="${e.id}">«${esc(e.name)}» è chiuso: tenta di aprirlo</button>` : `<button class="btn sm" data-act="loot" data-id="${e.id}">Apri «${esc(e.name)}»</button>`);
     else if (e.kind === 'monster' && d.dead && d.loot && !d.looted) out.push(`<button class="btn sm" data-act="loot" data-id="${e.id}">Saccheggia ${esc(e.name)}</button>`);
     else if (e.kind === 'trap' && d.armed !== false) out.push(`<button class="btn sm" data-act="disarm" data-id="${e.id}">Disarma «${esc(e.name)}» (CD ${d.disarm})</button>`);
+    else if (e.kind === 'npc') out.push(`<button class="btn sm primary" data-act="talk" data-id="${e.id}">Parla con ${esc(e.name)}${({ locanda: ' (locanda e ingaggi)', negozio: ' (negozio)', voci: ' (voci e incarichi)', prigioniero: ' (prigioniero)', viandante: ' (viandante)' })[d.role] || ''}</button>`);
+    else if (e.kind === 'door' && d.place === 'oasi') out.push(`<button class="btn sm primary" data-act="enter-oasi" data-id="${e.id}">Entra nell'oasi «${esc(e.name)}» (tira il d20)</button>`);
     else if (e.kind === 'door') {
-      if (d.locked) out.push(`<button class="btn sm" data-act="door" data-id="${e.id}">${esc(e.name)}: bloccata${d.quest_id ? ', tenta di aprirla' : ' (decide il Master)'}</button>`);
+      if (d.waiting) out.push(`<span class="muted">${esc(e.name)}: la porta è sigillata, si riattiva quando finirete un altro dungeon.</span>`);
+      else if (d.locked) out.push(`<button class="btn sm" data-act="door" data-id="${e.id}">${esc(e.name)}: bloccata${d.quest_id ? ', tenta di aprirla' : ' (decide il Master)'}</button>`);
       else if (d.target_room) out.push(`<button class="btn sm primary" data-act="pass" data-id="${e.id}">Attraversa «${esc(e.name)}»</button>`);
     }
   }
@@ -312,10 +336,24 @@ const acts = {
     await doAction(store, ch, d.w, ally);
   }),
   mini: () => { board.toggleMini(); render(); },
+  sound: () => soundDialog().then(render),
   'zoom-in': () => board.zoom(0.8), 'zoom-out': () => board.zoom(1.25), fit: () => board.fit(),
   view: async () => { await board.set(board.mode === '2d' ? '3d' : '2d'); render(); },
   dmap: () => openDungeonMap({ store, role: 'player', currentRoomId: me()?.room_id }),
   loot: d => busy(() => lootEntity(store, me(), ent(d.id))),
+  talk: d => busy(() => talkTo(store, me(), ent(d.id))),
+  'spend-points': () => busy(() => spendPoints(store, me())),
+  'adv-start': () => busy(async () => {
+    if (store.rooms.length) return;
+    const cfg = await dungeonWizard({ level: partyLevel(store), party: Math.max(2, store.characters.length || 3) }); if (!cfg || store.rooms.length) return;
+    await startAdventure(store, cfg, { toast });
+  }),
+  'end-turn': () => busy(() => endTurn(store, me())),
+  'skip-turn': () => busy(() => skipTurn(store)),
+  'copy-code': () => navigator.clipboard?.writeText(store.campaign.code).then(() => toast('Codice copiato')).catch(() => toast(store.campaign.code)),
+  'dismiss-comp': d => busy(async () => { const c = store.characters.find(x => x.id === d.id); if (c && await confirmBox(`Congedare ${c.name}? Se ne va per la sua strada.`, 'Congeda')) await dismissCompanion(store, c); }),
+  'enter-oasi': d => busy(() => enterOasi(store, me(), ent(d.id))),
+  'learn-spell': d => busy(() => learnSpell(store, me(), +d.i)),
   disarm: d => busy(() => disarmTrap(store, me(), ent(d.id))),
   pass: d => busy(() => passDoor(store, me(), ent(d.id))),
   door: d => busy(() => questDialog(ent(d.id))),

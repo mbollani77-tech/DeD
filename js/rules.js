@@ -53,7 +53,68 @@ export const SPELLS = [
   { id: 'cura-ferite', nome: 'Cura ferite', gittata: 5, dado: '1d8', tipo: 'cura', mod: true, livello: 1 },
   { id: 'parola-guaritrice', nome: 'Parola guaritrice', gittata: 60, dado: '1d4', tipo: 'cura', mod: true, livello: 1, azione: 'bonus' },
   { id: 'palla-di-fuoco', nome: 'Palla di fuoco', gittata: 150, dado: '8d6', tipo: 'salvezza', salva: 'des', meta: true, area: 20, livello: 3 },
+  // nuove magie
+  { id: 'tocco-gelido', nome: 'Tocco gelido', gittata: 120, dado: '1d8', tipo: 'attacco', livello: 0 },
+  { id: 'veleno-sprizzante', nome: 'Veleno sprizzante', gittata: 10, dado: '1d12', tipo: 'salvezza', salva: 'cos', meta: false, livello: 0 },
+  { id: 'mani-brucianti', nome: 'Mani brucianti', gittata: 15, dado: '3d6', tipo: 'salvezza', salva: 'des', meta: true, area: 5, livello: 1 },
+  { id: 'colpo-guidato', nome: 'Colpo guidato', gittata: 120, dado: '4d6', tipo: 'attacco', livello: 1 },
+  { id: 'onda-tonante', nome: 'Onda tonante', gittata: 15, dado: '2d8', tipo: 'salvezza', salva: 'cos', meta: true, area: 10, livello: 1 },
+  { id: 'infliggi-ferite', nome: 'Infliggi ferite', gittata: 5, dado: '3d10', tipo: 'attacco', livello: 1 },
+  { id: 'raggio-rovente', nome: 'Raggio rovente', gittata: 120, dado: '4d6', tipo: 'attacco', livello: 2 },
+  { id: 'freccia-acida', nome: 'Freccia acida', gittata: 90, dado: '4d4', tipo: 'attacco', livello: 2 },
+  { id: 'frantumare', nome: 'Frantumare', gittata: 60, dado: '3d8', tipo: 'salvezza', salva: 'cos', meta: true, area: 10, livello: 2 },
+  { id: 'preghiera-di-guarigione', nome: 'Preghiera di guarigione', gittata: 30, dado: '2d8', tipo: 'cura', mod: true, livello: 2 },
+  { id: 'fulmine', nome: 'Fulmine', gittata: 100, dado: '8d6', tipo: 'salvezza', salva: 'des', meta: true, area: 15, livello: 3 },
+  { id: 'tocco-vampirico', nome: 'Tocco vampirico', gittata: 5, dado: '3d6', tipo: 'attacco', livello: 3 },
 ];
+
+/* ---------- chi può usare cosa ---------- */
+const SIMPLE = ['bastone', 'pugnale', 'mazza', 'giavellotto', 'arco-corto', 'balestra', 'ascia-manesca', 'senz-armi'];
+const MARTIAL = ['spada-lunga', 'spadone', 'ascia-bipenne', 'stocco', 'spada-corta', 'arco-lungo'];
+const ROGUELIKE = [...SIMPLE, 'spada-lunga', 'stocco', 'spada-corta'];
+const WEAPON_PROF = { barbaro: [...SIMPLE, ...MARTIAL], guerriero: [...SIMPLE, ...MARTIAL], paladino: [...SIMPLE, ...MARTIAL], ranger: [...SIMPLE, ...MARTIAL], ladro: ROGUELIKE, bardo: ROGUELIKE,
+  chierico: SIMPLE, druido: SIMPLE, warlock: SIMPLE, monaco: [...SIMPLE, 'spada-corta'], mago: ['pugnale', 'bastone', 'balestra', 'senz-armi'], stregone: ['pugnale', 'bastone', 'balestra', 'senz-armi'] };
+/** Caratteristica minima per maneggiare un'arma (le più pesanti chiedono Forza, quelle da tiro Destrezza). */
+export const WEAPON_REQ = { spadone: { for: 13 }, 'ascia-bipenne': { for: 13 }, 'spada-lunga': { for: 11 }, mazza: { for: 9 }, 'arco-lungo': { des: 11 }, 'arco-corto': { des: 9 }, balestra: { des: 9 }, stocco: { des: 9 } };
+
+/** Può usare l'arma? ok = no se manca la caratteristica minima. prof = false se la sua classe non è competente (niente bonus di competenza). */
+export function weaponCheck(ch, w) {
+  const id = w.id || WEAPONS.find(x => x.nome === w.nome)?.id;
+  for (const [k, v] of Object.entries(WEAPON_REQ[id] || {})) if ((ch.stats?.[k] ?? 10) < v) return { ok: false, prof: true, why: `Serve ${STAT_NAME[k]} ${v}` };
+  const list = WEAPON_PROF[ch.data?.classId]; const prof = !id || !list || list.includes(id);
+  return { ok: true, prof, why: prof ? '' : 'Non sei competente: niente bonus di competenza' };
+}
+/** Può lanciare la magia? Serve una classe che lancia incantesimi, la caratteristica magica a 10 + livello della magia e il livello giusto. */
+export function spellCheck(ch, sp) {
+  const cls = CLASSES.find(c => c.id === ch.data?.classId);
+  if (cls && !cls.cast) return { ok: false, why: `${cls.nome}: non lancia incantesimi` };
+  const stat = ch.data?.cast || cls?.cast || 'int'; const L = sp.livello ?? 1;
+  if ((ch.stats?.[stat] ?? 10) < 10 + L) return { ok: false, why: `Serve ${STAT_NAME[stat]} ${10 + L}` };
+  const lv = levelForSpell(L); if ((ch.level || 1) < lv) return { ok: false, why: `Serve il livello ${lv}` };
+  return { ok: true, why: '' };
+}
+
+/* ---------- mana ---------- */
+/** Mana massimo: chi non lancia incantesimi ne ha 0; gli altri crescono col livello e con la caratteristica magica. */
+export function maxMana(ch) {
+  const cls = CLASSES.find(c => c.id === ch.data?.classId);
+  if (cls ? !cls.cast : !ch.data?.cast) return 0;
+  const stat = ch.data?.cast || cls?.cast || 'int'; const lv = ch.level || 1;
+  return 6 + 4 * lv + Math.max(0, mod(ch.stats?.[stat] ?? 10)) * lv;
+}
+/** Mana attuale (chi non l'ha mai usato è al massimo). */
+export const manaOf = ch => Math.min(maxMana(ch), ch.data?.mana ?? maxMana(ch));
+/** Costo di una magia: 1 per un trucchetto, poi 3, 5, 7... (2 × livello + 1). */
+export const spellCost = sp => ((sp.livello ?? 1) <= 0 ? 1 : 2 * sp.livello + 1);
+
+/** Livello del personaggio da cui si può imparare una magia (regole 5e: liv. 1 dal 1°, liv. 2 dal 3°, liv. 3 dal 5°...). */
+export const levelForSpell = l => (l <= 0 ? 1 : 2 * l - 1);
+export const SCROLL_PRICE = { 1: 60, 2: 120, 3: 250 };
+/** Pergamena che insegna una magia (di livello da 1 a maxLevel). */
+export function scrollItem(maxLevel = 1) {
+  const pool = SPELLS.filter(s => s.livello >= 1 && s.livello <= Math.max(1, maxLevel)); const s = pool[Math.floor(Math.random() * pool.length)];
+  return { nome: `Pergamena: ${s.nome}`, desc: `Insegna la magia ${s.nome} (livello ${s.livello}, dal livello ${levelForSpell(s.livello)} del personaggio). Si usa dallo zaino.`, magia: s.id };
+}
 
 export const CLASSES = [
   { id: 'barbaro', nome: 'Barbaro', dv: 12, cast: null, ac: m => 10 + m.des + m.cos, armi: ['ascia-bipenne', 'giavellotto'], magie: [] },

@@ -2,6 +2,7 @@
 import { $, esc } from './ui.js';
 import { rollD20, roll } from './dice.js';
 import { hooks } from './rolls.js';
+import { play } from './sound.js';
 
 const SIDES = [4, 6, 8, 10, 12, 20, 100];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -94,7 +95,7 @@ export function mountDicebar(el, { stage = null } = {}) {
     const b = e.target.closest('.die3'); if (!b || b.disabled || !pend || pend.busy) return;
     const p = pend; p.busy = true;
     const live = dice.filter(d => !d.disabled);
-    live.forEach(d => d.classList.add('rolling'));
+    live.forEach(d => d.classList.add('rolling')); play('dice');
     let r; try { r = p.doRoll(); } catch (x) { live.forEach(d => d.classList.remove('rolling')); pend = null; idle(); return p.rej(x); }
     let fly = null;
     if (stage) {
@@ -103,7 +104,7 @@ export function mountDicebar(el, { stage = null } = {}) {
     }
     await sleep(260); live.forEach(d => d.classList.remove('rolling'));
     if (fly) await fly.landed; else await sleep(500);
-    out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop');
+    play('land'); out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop');
     out.innerHTML = `<b>${r.total}</b><span>${esc(r.text)}</span>`;
     await sleep(750);
     fly?.clear();

@@ -6,7 +6,7 @@ const W = 190, H = 140, GX = 64, GY = 56;
 
 export function openDungeonMap({ store, role, currentRoomId, onOpen }) {
   const master = role === 'master';
-  const rooms = [...store.rooms].sort((a, b) => a.sort - b.sort);
+  const rooms = [...store.rooms].filter(r => !r.meta?.encounter).sort((a, b) => a.sort - b.sort);
   if (!rooms.length) return ask({ title: 'Mappa del dungeon', ok: '', cancel: 'Chiudi', intro: 'Non ci sono ancora stanze.' });
   const byId = new Map(rooms.map(r => [r.id, r]));
   const doors = store.entities.filter(e => e.kind === 'door' && e.data.target_room && byId.has(e.data.target_room) && byId.has(e.room_id));

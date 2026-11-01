@@ -281,3 +281,48 @@ button.row .muted { grid-column: 1; font-size: .88rem; } button.row .chip { grid
 @media (prefers-reduced-motion: reduce) { .initstrip .turn i, .tok circle.turnring { animation: none; } }
 
 .initstrip .turn.idle { background: #ffffff12; border-color: #ffffff2a; color: #cfdcd7; } .initstrip .turn.idle i { background: #8fa3ad; animation: none; }
+
+/* creazione guidata del dungeon */
+dialog.dlg.wz { width: min(760px, 96vw); }
+.wz .dlg-form { padding: 1.1rem 1.2rem; } .wz h2 { margin: 0 0 .5rem; }
+.wz-steps { display: flex; gap: .2rem; list-style: none; margin: 0 0 .8rem; padding: 0; }
+.wz-steps li { flex: 1; text-align: center; font-size: .7rem; color: var(--muted); border-top: 3px solid var(--line); padding-top: .25rem; }
+.wz-steps li span { display: none; } .wz-steps li em { font-style: normal; }
+.wz-steps li.done { border-color: var(--teal); color: var(--teal-d); } .wz-steps li.now { border-color: var(--ochre); color: var(--ink); font-weight: 700; }
+.wz-title { margin: 0 0 .6rem; font-size: 1.15rem; } .wz-body h3 { margin: .9rem 0 .4rem; font-size: .95rem; } .wz-body h3:first-child { margin-top: 0; }
+.wz-body { max-height: 56vh; overflow: auto; padding: .15rem .2rem; display: block; }
+.wz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: .5rem; } .wz-grid.big { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); } .wz-grid.two { grid-template-columns: 1fr 1fr; margin-bottom: .6rem; }
+.wz-card { text-align: left; background: #fff; border: 2px solid var(--line); border-radius: 12px; padding: .6rem .7rem; cursor: pointer; display: flex; flex-direction: column; gap: .15rem; font: inherit; color: var(--ink); transition: border-color .15s, transform .1s; }
+.wz-card:hover { border-color: var(--teal); transform: translateY(-1px); } .wz-card.on { border-color: var(--teal); background: var(--teal-l); box-shadow: 0 0 0 2px var(--teal) inset; }
+.wz-card small { color: var(--muted); font-size: .8rem; line-height: 1.3; } .wz-ico { font-size: 1.5rem; line-height: 1; }
+.wz-num { max-width: 280px; margin-top: .6rem; } .wz-note { background: var(--mist); border-radius: 10px; padding: .55rem .75rem; margin: .8rem 0 0; font-size: .9rem; }
+.wz-sum { list-style: none; margin: 0 0 .8rem; padding: 0; display: grid; gap: .25rem; } .wz-sum li { display: flex; justify-content: space-between; gap: 1rem; border-bottom: 1px dashed var(--line); padding: .25rem 0; font-size: .92rem; } .wz-sum span { color: var(--muted); } .wz-sum b { text-align: right; }
+.wz-prev { background: #161c22; border-radius: 12px; padding: .5rem; } .wz-prev-h { display: flex; justify-content: space-between; align-items: center; color: #e8efec; margin-bottom: .4rem; } .wz-prev svg { width: 100%; max-height: 240px; display: block; }
+.dlg-actions .grow { flex: 1; }
+@media (max-width: 560px) { .wz-steps li em { display: none; } .wz-grid.two { grid-template-columns: 1fr; } }
+
+.wz-body:focus, .wz-body:focus-visible { outline: none; }
+.wz-prev-h .btn { color: var(--ink); } .wz-prev svg { max-height: 210px; }
+
+/* mappa del mondo: luoghi e abitanti */
+.tok.place circle.pbase { fill: #f6edd6e6; stroke: #5a3d1e; stroke-width: 2.4; }
+.tok .plabel { font: 700 10px var(--f-body); fill: #fff; paint-order: stroke; stroke: #1d1405; stroke-width: 3px; text-anchor: middle; pointer-events: none; }
+.tok.npc circle { fill: var(--ochre); }
+
+.wz-levels { list-style: none; margin: 0 0 .8rem; padding: 0; display: grid; gap: .4rem; }
+.wz-levels li { display: flex; align-items: center; gap: .6rem; background: #fff; border: 2px solid var(--line); border-radius: 12px; padding: .45rem .6rem; }
+.wz-levels .n { width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--teal); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: .85rem; flex: none; }
+.wz-levels .ico { font-size: 1.4rem; flex: none; } .wz-levels .t { flex: 1; min-width: 0; } .wz-levels .t small { display: block; color: var(--muted); font-size: .78rem; line-height: 1.25; } .wz-levels .ctl { display: flex; gap: .25rem; flex: none; }
+
+/* mana */
+.manabar { display: grid; grid-template-columns: auto 1fr auto; gap: .4rem; align-items: center; font-size: .72rem; color: #9ec9ee; margin-top: .35rem; } .manabar span { font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.manabar > div, .manameter { height: 8px; border-radius: 99px; background: #ffffff1c; overflow: hidden; } .manabar i, .manameter i { display: block; height: 100%; background: linear-gradient(90deg, #3d7fd1, #7fb6f2); border-radius: 99px; transition: width .3s; }
+.hp.mana .manameter { background: #d6dde4; } .hp.mana em { color: #2a5a9a; }
+
+.actionpanel .btn.big { font-size: 1.05rem; padding: .6rem .8rem; text-align: center; background: #bd8329; border-color: #f4d58d; color: #1d1405; font-weight: 700; } .actionpanel .small { font-size: .82rem; margin: 0; color: #cfdcd7; }
+
+/* compagni */
+.tok.pc.comp circle { fill: #4f7f8f; stroke-dasharray: 4 2; } .tok.pc.comp.down { opacity: .5; }
+.comps { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .35rem; } .comps li { display: flex; justify-content: space-between; align-items: center; gap: .6rem; } .comps small { display: block; color: var(--muted); font-size: .78rem; }
+
+.tok.treasure.locked { filter: drop-shadow(0 0 5px #f4d58d); }

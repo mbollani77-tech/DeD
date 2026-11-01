@@ -40,6 +40,19 @@
       </div>
     </form>
 
+    <form class="panelbox" id="f-coop">
+      <h2>Gioca senza Master</h2>
+      <p class="muted">Un'avventura cooperativa: il gioco crea mappa, mostri e tesori e fa muovere i nemici. Tu e i tuoi amici giocate soli, oppure da solo con compagni.</p>
+      <div class="inline">
+        <div class="fld"><label for="k-name">Nome dell'avventura</label><input id="k-name" type="text" required maxlength="80" placeholder="La Cripta del Re Dimenticato"></div>
+        <button class="btn primary">Inizia</button>
+      </div>
+      <div class="secret" id="k-created" hidden>
+        <p>Codice da dare agli amici: <code id="k-code"></code></p>
+        <a class="btn primary" href="player.html">Entra nella partita</a>
+      </div>
+    </form>
+
     <form class="panelbox" id="f-master">
       <h2>Rientra come Master</h2>
       <div class="inline">

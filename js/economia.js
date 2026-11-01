@@ -18,12 +18,13 @@ const FRESH = {
 
 export const tableOf = o => (o.kind ? 'entities' : 'characters');
 export const getEco = o => ({ ...FRESH, ...(o?.data?.eco || {}) });
-export const saveEco = (store, o, patch) => update(store, tableOf(o), o.id, { data: { ...o.data, eco: { ...getEco(o), ...patch } } });
+/** Salva lo stato delle azioni. Le azioni contano solo durante uno scontro: fuori dal combattimento sono libere (force = scrive comunque). */
+export const saveEco = (store, o, patch, force = false) => ((force || (store.campaign.state?.init || []).length) ? update(store, tableOf(o), o.id, { data: { ...o.data, eco: { ...getEco(o), ...patch } } }) : Promise.resolve());
 
 /** Nuovo round: tutti recuperano azione, bonus, reazione. */
 export async function resetEco(store) {
   const all = [...store.characters, ...store.entities.filter(e => e.kind === 'monster')];
-  for (const o of all) if (o.data?.eco && JSON.stringify(o.data.eco) !== JSON.stringify(FRESH)) await saveEco(store, o, { ...FRESH });
+  for (const o of all) if (o.data?.eco && JSON.stringify(o.data.eco) !== JSON.stringify(FRESH)) await saveEco(store, o, { ...FRESH }, true);
 }
 
 export const isLight = w => !!w?.leggera || /pugnale|spada corta|ascia manesca/i.test(w?.nome || '');

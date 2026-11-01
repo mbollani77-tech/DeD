@@ -5,10 +5,17 @@ import { openDungeonMap } from './dungeonmap.js';
 import { THEME_LIST, LUCI, PROP_LIST, PROPS } from './props.js';
 import { mountDiceTray, roll, rollD20, randInt, pick } from './dice.js';
 import { STATS, STAT_NAME, BESTIARY, TRAPS, mod, hexesFor, fmtMod, crLabel } from './rules.js';
-import { generateRoom, randomProps, randomMonster, randomTreasure, randomTrap, randomQuest, monsterFromPreset, trapFromPreset, itemsToText, parseItems } from './random.js';
+import { dungeonWizard, TEMPLATES } from './wizard.js';
+import { buildDungeon, renewDungeon, unlockWaiting } from './dungeon.js';
+import { generateWorld, generateTown, freeNear, oasisName } from './world.js';
+import { DENSITY, DIFFICULTY, generateRoom, randomProps, randomMonster, randomTreasure, randomTrap, randomQuest, monsterFromPreset, trapFromPreset, itemsToText, parseItems } from './random.js';
 import { monsterAttack, monsterAutoTurn, damageEntity, damageChar, healChar, liveMonsters, doAction } from './combat.js';
 import { getEco, resetEco } from './economia.js';
+import * as engine from './engine.js';
+import * as adventure from './adventure.js';
+import { startCombat } from './combatflow.js';
 import { mountDicebar } from './dicebar.js';
+import { setMood, onLog, moodFor, soundDialog, soundOn } from './sound.js';
 import { key, dist, neighbors, inBounds } from './hex.js';
 
 /* ---------- sessione ---------- */
@@ -59,6 +66,7 @@ const board = createView({ svg: $('#board'), host3d: $('#board3d'), handlers: {
 /* ---------- rendering ---------- */
 let rendering = false;
 function render() {
+  setTimeout(() => runAutoMonsters().catch(() => {}), 0); // se tocca a un mostro (anche dopo un incontro nato dal viaggio) e i mostri sono automatici, giocano da soli
   if (rendering) return; rendering = true;
   try {
     const r = room(); S.roomId = r?.id || null;
@@ -66,6 +74,7 @@ function render() {
     renderTop(); renderToolbar(); renderInit(); renderBoard(r); renderStatus(r);
     if (!(document.activeElement?.tagName === 'SELECT' && $('#panel').contains(document.activeElement))) renderPanel();
     renderInspector(); renderLog();
+    setMood(moodFor(store, r)); onLog(store.log); $('[data-act="sound"]')?.classList.toggle('on', soundOn());
   } finally { rendering = false; }
 }
 
@@ -84,11 +93,11 @@ function renderToolbar() {
 function renderInit() {
   const st = store.campaign.state || {}; const el = $('#init'); const list = st.init || [];
   el.hidden = false;
-  if (!list.length) { el.innerHTML = '<span class="turn idle"><i></i><span>Nessuno scontro in corso</span></span><span class="rd">Tira l\'iniziativa per far partire i turni.</span><button class="btn sm nextturn" data-act="init-roll">Tira iniziativa</button>'; return; }
+  if (!list.length) { el.innerHTML = '<span class="turn idle"><i></i><span>Nessuno scontro in corso</span></span><span class="rd">Tira l\'iniziativa per far partire i turni.</span><button class="btn sm" data-act="auto-toggle" title="Se attivo, i mostri si muovono e attaccano da soli nel loro turno">Mostri: ' + (st.config?.auto ? 'automatici' : 'manuali') + '</button><button class="btn sm nextturn" data-act="init-roll">Tira iniziativa</button>'; return; }
   const cur = list[st.turn || 0]; const mon = cur?.k === 'e';
   el.innerHTML = `<span class="turn ${mon ? 'mon' : 'pc'}"><i></i><span>Tocca a <b>${esc(cur?.name || '')}</b> <small>${mon ? 'mostro' : 'giocatore'}</small></span></span><b class="rd">Round ${st.round || 1}</b>`
     + list.map((i, n) => `<span class="it ${n === (st.turn || 0) ? 'now' : ''} ${i.k === 'e' ? 'm' : ''}">${esc(i.name)} ${i.roll}</span>`).join('')
-    + '<button class="btn sm nextturn" data-act="init-next">Prossimo turno</button>';
+    + `<button class="btn sm" data-act="auto-toggle" title="Se attivo, i mostri si muovono e attaccano da soli nel loro turno">Mostri: ${st.config?.auto ? 'automatici' : 'manuali'}</button><button class="btn sm nextturn" data-act="init-next">Prossimo turno</button>`;
 }
 
 function renderBoard(r) {
@@ -118,7 +127,7 @@ function renderPanel() {
 
 function tabStanze() {
   const r = room();
-  return `<div class="stack"><div class="btnrow"><button class="btn primary" data-act="room-new">Nuova stanza</button><button class="btn" data-act="room-gen">Stanza casuale</button><button class="btn" data-act="room-dungeon">Dungeon casuale</button></div>
+  return `<div class="stack"><div class="btnrow"><button class="btn primary" data-act="room-new">Nuova stanza</button><button class="btn" data-act="room-gen">Stanza casuale</button><button class="btn" data-act="room-dungeon">Dungeon casuale</button>${Object.values(store.campaign.state?.dungeons || {}).some(d => d.waiting) ? '<button class="btn" data-act="dungeon-wake" title="Apre subito i dungeon rimodellati che dormono">Riattiva i dungeon dormienti</button>' : ''}${r?.meta?.dungeon ? `<button class="btn" data-act="dungeon-renew" title="Crea di nuovo tutte le stanze di questo dungeon, un giro più difficile">Rimodella questo dungeon (giro ${(r.meta.dungeon.tier || 0) + 2})</button>` : ''}</div>
   <ul class="list">${store.rooms.map(x => `<li class="${x.id === r?.id ? 'on' : ''}"><button class="row" data-act="room-open" data-id="${x.id}"><strong>${esc(x.name)}</strong><span class="muted">${x.cols}×${x.rows}${x.fog ? ', nebbia' : ''}</span><span class="chip">${store.characters.filter(c => c.room_id === x.id).length} PG</span></button></li>`).join('') || '<li class="muted">Nessuna stanza ancora.</li>'}</ul>
   ${r ? `<div class="card stack"><h3>${esc(r.name)}</h3><p class="muted">${esc(r.notes || 'Nessuna nota per questa stanza.')}</p><div class="btnrow"><button class="btn" data-act="room-edit">Modifica</button><button class="btn" data-act="room-fill">Riempi a caso</button><button class="btn" data-act="party-here">Porta qui il gruppo</button><button class="btn" data-act="room-clear">Svuota oggetti</button><button class="btn danger" data-act="room-del">Elimina</button></div></div>` : ''}</div>`;
 }
@@ -147,7 +156,7 @@ function tabQuest() {
 
 function tabGruppo() {
   const st = store.campaign.state || {};
-  return `<div class="stack"><div class="card stack"><h3>Combattimento</h3><div class="btnrow"><button class="btn" data-act="init-roll">Tira iniziativa</button><button class="btn" data-act="init-next">Prossimo turno</button><button class="btn" data-act="round-reset">Nuovo round</button><button class="btn" data-act="init-clear">Fine scontro</button></div><p class="muted">${(st.init || []).length ? `Round ${st.round || 1}, turno di ${esc(st.init[st.turn || 0]?.name || '')}.` : 'L\'iniziativa riguarda la stanza attuale. «Nuovo round» ridà il movimento a tutti.'}</p></div>
+  return `<div class="stack"><div class="card stack"><h3>Combattimento</h3><div class="btnrow"><button class="btn" data-act="init-roll">Tira iniziativa</button><button class="btn" data-act="init-next">Prossimo turno</button><button class="btn" data-act="round-reset">Nuovo round</button><button class="btn" data-act="init-clear">Fine scontro</button><button class="btn" data-act="scale-toggle" title="Se attivo, i mostri crescono (punti ferita, attacco, rinforzi) in base a quanti sono in campo">Difficoltà adattiva: ${st.config?.scaling === false ? 'spenta' : 'attiva'}</button><button class="btn" data-act="loot-toggle" title="Se attivo, alla morte di un mostro oro, esperienza e oggetti vanno ai personaggi in proporzione ai danni inflitti">Bottino: ${st.config?.autoLoot === false ? 'a mano' : 'automatico'}</button></div><p class="muted">${(st.init || []).length ? `Round ${st.round || 1}, turno di ${esc(st.init[st.turn || 0]?.name || '')}.` : 'L\'iniziativa riguarda la stanza attuale. «Nuovo round» ridà il movimento a tutti.'}</p></div>
   <ul class="list">${store.characters.map(c => `<li class="${S.sel?.id === c.id ? 'on' : ''}"><button class="row" data-act="char-sel" data-id="${c.id}"><strong>${esc(c.name)}</strong><span class="muted">${esc(c.race)} ${esc(c.class)} liv. ${c.level}, ${esc(c.player || 'giocatore')}</span><span class="chip ${c.hp <= 0 ? 'red' : ''}">${c.hp}/${c.max_hp}</span></button></li>`).join('') || '<li class="muted">Nessun personaggio: i giocatori li creano entrando con il codice.</li>'}</ul></div>`;
 }
 
@@ -163,7 +172,8 @@ function entityInspector(e) {
     ${pcs.length && !d.dead ? `<div class="inline"><div class="fld"><label for="insp-target">Attacca</label><select id="insp-target">${pcs.map(c => `<option value="${c.id}">${esc(c.name)} (a ${dist(e, c)} esagoni)</option>`).join('')}</select></div><button class="btn sm" data-act="mon-atk">Attacca</button></div>` : ''}
     <div class="btnrow">${common}</div></div>`;
   }
-  if (e.kind === 'treasure') return `<div class="card stack"><h3>${esc(e.name)} ${tags}</h3><dl class="kv"><dt>Oro</dt><dd>${d.oro || 0}</dd><dt>Oggetti</dt><dd>${(d.oggetti || []).map(o => esc(o.nome)).join(', ') || 'nessuno'}</dd><dt>Stato</dt><dd>${d.looted ? 'già aperto' : 'chiuso'}</dd></dl><div class="btnrow">${common}</div></div>`;
+  if (e.kind === 'treasure') return `<div class="card stack"><h3>${esc(e.name)} ${tags}${d.mimic ? ' <span class="chip red">MIMIC!</span>' : ''}</h3><dl class="kv"><dt>Oro</dt><dd>${d.oro || 0}</dd><dt>Oggetti</dt><dd>${(d.oggetti || []).map(o => esc(o.nome)).join(', ') || 'nessuno'}</dd><dt>Stato</dt><dd>${d.looted ? 'già aperto' : 'chiuso'}</dd></dl><div class="btnrow">${common}</div></div>`;
+  if (e.kind === 'npc') return `<div class="card stack"><h3>${esc(e.name)} ${tags}</h3><p class="muted">Abitante del paese: ${({ locanda: 'gestisce la locanda (riposo)', negozio: 'gestisce il negozio (compra e vende)', voci: 'racconta le voci e assegna incarichi' })[d.role] || ''}.</p><div class="btnrow"><button class="btn sm" data-act="ent-move">Sposta</button><button class="btn sm danger" data-act="ent-del">Elimina</button></div></div>`;
   if (e.kind === 'trap') return `<div class="card stack"><h3>${esc(e.name)} ${tags}</h3><p class="muted">${esc(d.desc || '')}</p><dl class="kv"><dt>Individuare</dt><dd>CD ${d.detect}</dd><dt>Disarmare</dt><dd>CD ${d.disarm}</dd><dt>Salvezza</dt><dd>${STAT_NAME[d.save] || ''} CD ${d.dc}, ${esc(d.dado)}${d.half ? ' (dimezza)' : ''}</dd><dt>Stato</dt><dd>${d.armed === false ? 'disinnescata' : 'armata'}</dd></dl><div class="btnrow"><button class="btn sm" data-act="trap-arm">${d.armed === false ? 'Riarma' : 'Disinnesca'}</button>${common}</div></div>`;
   const q = store.quests.find(x => x.id === d.quest_id); const tr = store.rooms.find(x => x.id === d.target_room);
   return `<div class="card stack"><h3>${esc(e.name)} ${tags}</h3><dl class="kv"><dt>Stato</dt><dd>${d.locked ? 'bloccata' : 'aperta'}</dd><dt>Quest</dt><dd>${q ? esc(q.title) : 'nessuna'}</dd><dt>Porta verso</dt><dd>${tr ? esc(tr.name) : 'nessuna stanza'}</dd></dl><div class="btnrow"><button class="btn sm" data-act="door-lock">${d.locked ? 'Sblocca' : 'Blocca'}</button>${common}</div></div>`;
@@ -318,38 +328,14 @@ async function roomDialog(r) {
   ] });
 }
 
-async function createGenerated(n, link) {
-  const level = partyLevel(), party = Math.max(2, store.characters.length || 3);
-  let linkInfo = null;
-  if (link) {
-    const A = link; const occ = new Set(entsIn(A).map(e => key(e.col, e.row))); const cand = [];
-    for (let y = 1; y < A.rows - 1; y++) for (let x = 1; x < A.cols - 1; x++) if (A.cells[key(x, y)] !== 'w' && !occ.has(key(x, y)) && dist({ col: x, row: y }, A.meta?.start || { col: 1, row: 1 }) > 2) cand.push({ col: x, row: y });
-    if (!cand.length) { toast('Nella stanza attuale non c\'è spazio per una porta.', 'err'); return; }
-    const cell = pick(cand);
-    const ret = neighbors(cell.col, cell.row).find(h => inBounds(A, h) && A.cells[key(h.col, h.row)] !== 'w' && !occ.has(key(h.col, h.row))) || cell;
-    linkInfo = { room: A, cell, ret };
-  }
-  const gens = Array.from({ length: n }, (_, i) => generateRoom({ level, party, hasEntrance: link ? true : i > 0, hasExit: i < n - 1, difficulty: 1 + Math.floor(i / 3) }));
-  const base = Math.max(0, ...store.rooms.map(r => r.sort)) + 1;
-  const rooms = await insertMany(store, 'rooms', gens.map((g, i) => ({ campaign_id: cid, name: g.name, cols: g.cols, rows: g.rows, cells: g.cells, meta: g.meta, sort: base + i })));
-  rooms.sort((a, b) => a.sort - b.sort);
-  const quests = [];
-  for (const g of gens) quests.push(g.quest ? await insert(store, 'quests', { campaign_id: cid, title: g.quest.title, kind: g.quest.kind, data: g.quest.data }) : null);
-  const rows = [];
-  gens.forEach((g, i) => g.entities.forEach(e => {
-    const { _role, ...rest } = e;
-    const row = { campaign_id: cid, room_id: rooms[i].id, kind: rest.kind, name: rest.name, col: rest.col, row: rest.row, hidden: !!rest.hidden, data: { ...rest.data } };
-    if (_role === 'exit' && i < n - 1) { Object.assign(row.data, { target_room: rooms[i + 1].id, tcol: gens[i + 1].meta.start.col, trow: gens[i + 1].meta.start.row }); if (quests[i]) row.data.quest_id = quests[i].id; }
-    if (_role === 'entrance') {
-      if (i > 0) Object.assign(row.data, { target_room: rooms[i - 1].id, tcol: gens[i - 1].meta.exitFront.col, trow: gens[i - 1].meta.exitFront.row });
-      else if (linkInfo) Object.assign(row.data, { target_room: linkInfo.room.id, tcol: linkInfo.ret.col, trow: linkInfo.ret.row });
-    }
-    rows.push(row);
-  }));
-  if (linkInfo) rows.push({ campaign_id: cid, room_id: linkInfo.room.id, kind: 'door', name: 'Passaggio', col: linkInfo.cell.col, row: linkInfo.cell.row, hidden: false, data: { locked: false, target_room: rooms[0].id, tcol: gens[0].meta.start.col, trow: gens[0].meta.start.row } });
-  await insertMany(store, 'entities', rows);
-  S.roomId = rooms[0].id; S.sel = null; render();
-  toast(n > 1 ? `Dungeon di ${n} stanze creato` : `Creata: ${rooms[0].name}`);
+async function createGenerated(n, link, opts = {}) {
+  const rooms = await adventure.createGenerated(store, n, link, opts, { toast });
+  if (rooms && !opts.quiet) { S.roomId = rooms[0].id; S.sel = null; render(); toast(n > 1 ? `Dungeon di ${n} stanze creato${(opts.boss ?? store.campaign.state?.config?.boss) ? ', con boss finale' : ''}` : `Creata: ${rooms[0].name}`); }
+  return rooms;
+}
+async function createWorldCampaign(cfg) {
+  const world = await adventure.createWorldCampaign(store, cfg, { toast });
+  S.roomId = world.id; S.sel = null; render();
 }
 
 async function fillRoom(r) {
@@ -358,7 +344,8 @@ async function fillRoom(r) {
   for (let y = 1; y < r.rows - 1; y++) for (let x = 1; x < r.cols - 1; x++) if (r.cells[key(x, y)] !== 'w' && !occ.has(key(x, y)) && dist({ col: x, row: y }, start) > 2) free.push({ col: x, row: y });
   const take = () => free.splice(randInt(0, free.length - 1), 1)[0];
   const tpls = [];
-  for (let i = 0, n = randInt(2, 4); i < n; i++) tpls.push(randomMonster(level));
+  const cfg = store.campaign.state?.config || {}; const dd = DIFFICULTY[cfg.diff] || DIFFICULTY.normale; const [lo, hi] = DENSITY[cfg.monsters] || DENSITY.normali;
+  for (let i = 0, n = Math.max(1, randInt(lo, hi) + dd.n); i < n; i++) tpls.push(randomMonster(Math.max(1, level + dd.lvl), cfg.pool));
   tpls.push(randomTreasure(level)); for (let i = 0, n = randInt(0, 2); i < n; i++) tpls.push({ ...randomTrap(level) });
   const rows = []; const counts = {};
   for (const t of tpls) { const h = take(); if (!h) break; counts[t.name] = (counts[t.name] || 0) + 1; rows.push({ campaign_id: cid, room_id: r.id, kind: t.kind, name: counts[t.name] > 1 ? `${t.name} ${counts[t.name]}` : t.name, col: h.col, row: h.row, hidden: !!t.hidden, data: t.data }); }
@@ -369,27 +356,19 @@ async function fillRoom(r) {
 const hexRing = (r, c) => { const out = []; const seen = new Set(); const q = [c]; seen.add(key(c.col, c.row)); while (q.length && out.length < 30) { const cur = q.shift(); for (const n of neighbors(cur.col, cur.row)) { const k = key(n.col, n.row); if (seen.has(k) || !inBounds(r, n)) continue; seen.add(k); q.push(n); if (r.cells[k] !== 'w') out.push(n); } } return out; };
 
 async function rollInit() {
-  const r = room(); const list = [];
-  store.characters.filter(c => c.room_id === r.id && c.hp > 0).forEach(c => list.push({ k: 'c', id: c.id, name: c.name, roll: rollD20(mod(c.stats.des)).total }));
-  liveMonsters(store, r.id).filter(e => !e.hidden).forEach(e => list.push({ k: 'e', id: e.id, name: e.name, roll: rollD20(e.data.dex || 0).total }));
-  if (!list.length) return toast('Nessuno da mettere in ordine in questa stanza.', 'err');
-  list.sort((a, b) => b.roll - a.roll);
-  await setCampaignState(store, { init: list, turn: 0, round: 1 });
-  say(store, 'Master', 'event', `Iniziativa: ${list.map(i => `${i.name} ${i.roll}`).join(', ')}.`);
+  const r = room(); if (!r) return;
+  const ok = await startCombat(store, r.id, { force: true });
+  if (!ok) return toast('Nessuno da mettere in ordine in questa stanza.', 'err');
+  await runAutoMonsters();
 }
-async function resetMoves() { for (const c of store.characters) { const m = hexesFor(c.speed); if (c.move_left !== m) await update(store, 'characters', c.id, { move_left: m }); } await resetEco(store); }
+const resetMoves = () => engine.resetMoves(store);
+const stepTurn = () => engine.stepTurn(store);
+const runAutoMonsters = () => engine.runAutoMonsters(store);
+
 async function nextTurn() {
   const st = store.campaign.state || {}; const init = st.init || [];
   if (!init.length) return toast('Tira prima l\'iniziativa.', 'err');
-  let turn = st.turn || 0, round = st.round || 1, newRound = false;
-  const alive = i => i.k === 'c' ? (store.characters.find(c => c.id === i.id)?.hp ?? 0) > 0 : !!store.entities.find(e => e.id === i.id && !e.data.dead);
-  for (let g = 0; g < init.length; g++) { // salta chi è a terra o sconfitto
-    turn++; if (turn >= init.length) { turn = 0; round++; newRound = true; }
-    if (alive(init[turn])) break;
-  }
-  if (newRound) { await resetMoves(); say(store, 'Master', 'event', `Inizia il round ${round}.`); }
-  await setCampaignState(store, { turn, round });
-  const cur = init[turn]; if (cur) say(store, 'Master', 'event', `Tocca a ${cur.name}${cur.k === 'e' ? ' (mostro)' : ''}.`);
+  await stepTurn(); await runAutoMonsters();
 }
 async function hpDialog(title) {
   return ask({ title, ok: 'Applica', fields: [{ name: 'n', label: 'Quantità', type: 'number', value: 1, min: 0, required: true }, { name: 'k', label: 'Effetto', type: 'select', value: 'dmg', options: [{ v: 'dmg', l: 'Danni' }, { v: 'heal', l: 'Cura' }] }] });
@@ -405,6 +384,7 @@ const acts = {
   tab: d => { S.tab = d.t; render(); },
   tool: async d => { if (d.t === 'paint' && board.mode === '3d') await board.set('2d'); S.tool = { t: d.t, v: d.v }; S.moving = false; render(); },
   mini: () => { board.toggleMini(); render(); },
+  sound: () => soundDialog().then(render),
   'zoom-in': () => board.zoom(0.8), 'zoom-out': () => board.zoom(1.25), fit: () => board.fit(),
   view: async () => { await board.set(board.mode === '2d' ? '3d' : '2d'); if (board.mode === '3d' && ['paint'].includes(S.tool.t)) { S.tool = { t: 'select' }; toast('In 3D si guarda e si piazza; per disegnare i muri torna in 2D.'); } render(); },
   dmap: () => openDungeonMap({ store, role: 'master', currentRoomId: room()?.id, onOpen: id => { S.roomId = id; S.sel = null; render(); } }),
@@ -429,9 +409,16 @@ const acts = {
   },
   'room-gen': async () => { const r = room(); await createGenerated(1, r && r.meta?.start ? (await confirmBox('Collegare la nuova stanza a «' + r.name + '» con una porta?', 'Sì, collega')) ? r : null : null); },
   'room-dungeon': async () => {
-    const v = await ask({ title: 'Dungeon casuale', ok: 'Genera', intro: 'Crea una catena di stanze collegate da porte, con mostri, tesori, trappole e quest.', fields: [{ name: 'n', label: 'Numero di stanze', type: 'number', value: 4, min: 2, max: 8 }] });
-    if (v) await createGenerated(v.n ?? 4, null);
+    const cfg = await dungeonWizard({ level: partyLevel(), party: Math.max(2, store.characters.length || 3) });
+    if (!cfg) return;
+    if (cfg.mode === 'mondo') await createWorldCampaign(cfg); else await createGenerated(cfg.n, null, { ...cfg, save: true });
   },
+  'dungeon-renew': async () => {
+    const r = room(); const did = r?.meta?.dungeon?.id; if (!did) return;
+    if (!(await confirmBox('Rimodellare tutto il dungeon? Le stanze attuali spariscono e se ne creano di nuove, più difficili. Chi è dentro viene portato fuori.', 'Rimodella'))) return;
+    const b = await renewDungeon(store, did, undefined, { defer: false }); if (b) { S.roomId = b.rooms[0].id; S.sel = null; render(); toast('Dungeon rimodellato'); }
+  },
+  'dungeon-wake': async () => { const n = await unlockWaiting(store, { force: true }); toast(n ? `${n} dungeon riattivati` : 'Nessun dungeon dormiente'); },
   'room-fill': () => fillRoom(room()),
   'room-clear': async () => { const r = room(); if (await confirmBox('Eliminare tutti i mostri, tesori, trappole e porte di questa stanza?', 'Svuota')) { for (const e of entsIn(r)) await remove(store, 'entities', e.id); S.sel = null; } },
   'room-del': async () => {
@@ -503,8 +490,11 @@ const acts = {
   'char-del': async () => { const c = selChar(); if (c && await confirmBox(`Rimuovere ${c.name} dalla campagna?`, 'Rimuovi')) { S.sel = null; await remove(store, 'characters', c.id); } },
 
   'init-roll': rollInit, 'init-next': nextTurn,
+  'scale-toggle': async () => { const c = store.campaign.state?.config || {}; await setCampaignState(store, { config: { ...c, scaling: c.scaling === false } }); toast(c.scaling === false ? 'Difficoltà adattiva attiva' : 'Difficoltà adattiva spenta'); },
+  'loot-toggle': async () => { const c = store.campaign.state?.config || {}; await setCampaignState(store, { config: { ...c, autoLoot: c.autoLoot === false } }); toast(c.autoLoot === false ? 'Bottino automatico: i mostri sconfitti pagano subito' : 'Bottino a mano: usa «Saccheggia»'); },
+  'auto-toggle': async () => { const c = store.campaign.state?.config || {}; await setCampaignState(store, { config: { ...c, auto: !c.auto } }); toast(!c.auto ? 'Mostri automatici: attivi' : 'Mostri automatici: spenti, li muovi tu'); if (!c.auto) runAutoMonsters(); },
   'round-reset': async () => { await resetMoves(); toast('Movimento ripristinato per tutti'); },
-  'init-clear': () => setCampaignState(store, { init: [], turn: 0, round: 1 }),
+  'init-clear': async () => { await setCampaignState(store, { init: [], turn: 0, round: 1 }); await resetEco(store); },
 };
 
 document.addEventListener('click', async e => {

@@ -252,7 +252,7 @@ export function createBoard3D(container, h = {}) {
         build: () => {
           const g = new THREE.Group(); let label = null; let top = 1.2;
           if (e.kind === 'monster') { const b = monsterBody(e); g.add(mesh(cyl(0.72, 0.78, 0.14, 24), mat(0x3a1713), 0, 0.07), b); b.position.y = 0.0; if (dd.dead) { b.rotation.z = Math.PI / 2.2; b.position.set(0, 0.35, 0); b.children.forEach(ch => ch.traverse(n => { if (n.isMesh) n.material = mat(0x6b6b66); })); } else { label = labelSprite(e.name.replace(/\s+\d+$/, '') + (/\s(\d+)$/.test(e.name) ? ' ' + e.name.match(/\s(\d+)$/)[1] : ''), dd.hp / (dd.maxHp || 1)); top = 2.2; } }
-          else if (e.kind === 'treasure') g.add(chestMesh(e)); else if (e.kind === 'door') { g.add(doorMesh(e, room)); } else g.add(trapMesh(e));
+          else if (e.kind === 'treasure') g.add(chestMesh(e)); else if (e.kind === 'npc') { g.add(mesh(cyl(0.7, 0.75, 0.14, 24), mat(0x5a3d1e), 0, 0.07), mesh(cyl(0.3, 0.42, 1.1, 16), mat(0xc0862a), 0, 0.68)); } else if (e.kind === 'door') { g.add(doorMesh(e, room)); } else g.add(trapMesh(e));
           if (label) { label.position.y = top + 0.5; g.add(label); }
           if (ghost) g.traverse(n => { if (n.isMesh) { n.material = n.material.clone(); n.material.transparent = true; n.material.opacity = 0.45; } });
           return g;
